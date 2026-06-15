@@ -82,23 +82,21 @@ if [ ! -d "sites/lms.render" ]; then
 }
 EOF
     
-    # Check if the database has tables (if it does not, we run bench new-site)
+    # Check if the database has tables
     echo "Checking database initialization state..."
-    if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "USE $DB_NAME; SHOW TABLES;" > /dev/null 2>&1; then
-        echo "Database is empty or unitialized. Executing first-time bench new-site installation..."
-        # Clean config folder temporarily so new-site can initialize
-        rm -rf sites/lms.render
+    if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "USE $DB_NAME; SHOW TABLES;" 2>/dev/null | grep -q "tab"; then
+        echo "Database is empty or uninitialized. Executing manual secure bench initialization..."
         
-        bench new-site lms.render \
-          --db-name "$DB_NAME" \
-          --db-user "$DB_USER" \
-          --db-password "$DB_PASSWORD" \
-          --db-host "$DB_HOST" \
-          --db-port "$DB_PORT" \
-          --no-setup-db \
-          --admin-password "${ADMIN_PASSWORD:-admin}" \
-          --force
-        
+        # Import the core framework tables from SQL dump over SSL
+        echo "Importing core Frappe database schema..."
+        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt "$DB_NAME" < apps/frappe/frappe/database/mariadb/framework_mariadb.sql
+
+        # Set the admin password
+        echo "Setting admin user password..."
+        bench --site lms.render set-admin-password "${ADMIN_PASSWORD:-admin}"
+
+        # Install payments and LMS apps
+        echo "Installing payments & lms applications..."
         bench --site lms.render install-app payments
         bench --site lms.render install-app lms
     else
