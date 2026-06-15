@@ -2,7 +2,7 @@ FROM frappe/bench:latest
 
 # Switch to root to install system dependencies
 USER root
-RUN apt-get update && apt-get install -y redis-server mariadb-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y redis-server mariadb-client ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Switch to frappe user
 USER frappe

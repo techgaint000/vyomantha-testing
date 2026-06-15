@@ -40,6 +40,19 @@ while True:
 
 cd /home/frappe/frappe-bench
 
+# Add db_ssl_ca configuration to common_site_config.json so all connections use TLS
+if [ -f "sites/common_site_config.json" ]; then
+    python3 -c "
+import json
+path = 'sites/common_site_config.json'
+with open(path, 'r') as f:
+    config = json.load(f)
+config['db_ssl_ca'] = '/etc/ssl/certs/ca-certificates.crt'
+with open(path, 'w') as f:
+    json.dump(config, f, indent=4)
+"
+fi
+
 # Apply environment configurations dynamically
 bench set-mariadb-host "$DB_HOST"
 bench set-config -g db_port "$DB_PORT"
@@ -63,6 +76,7 @@ if [ ! -d "sites/lms.render" ]; then
  "db_password": "$DB_PASSWORD",
  "db_type": "mariadb",
  "db_user": "$DB_USER",
+ "db_ssl_ca": "/etc/ssl/certs/ca-certificates.crt",
  "encryption_key": "frappe-encryption-key-for-security",
  "allow_cors": "$FRONTEND_URL"
 }
@@ -70,7 +84,7 @@ EOF
     
     # Check if the database has tables (if it does not, we run bench new-site)
     echo "Checking database initialization state..."
-    if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "USE $DB_NAME; SHOW TABLES;" > /dev/null 2>&1; then
+    if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "USE $DB_NAME; SHOW TABLES;" > /dev/null 2>&1; then
         echo "Database is empty or unitialized. Executing first-time bench new-site installation..."
         # Clean config folder temporarily so new-site can initialize
         rm -rf sites/lms.render
