@@ -1,0 +1,19 @@
+FROM frappe/bench:latest
+
+# Install redis-server and mariadb-client as root
+USER root
+RUN apt-get update && apt-get install -y redis-server mariadb-client && rm -rf /var/lib/apt/lists/*
+
+# Set up runtime user
+USER frappe
+WORKDIR /home/frappe
+
+# Copy init script
+COPY --chown=frappe:frappe init-render.sh /home/frappe/init-render.sh
+RUN chmod +x /home/frappe/init-render.sh
+
+# Expose default HTTP port
+EXPOSE 8000
+
+# Start script
+CMD ["/home/frappe/init-render.sh"]
