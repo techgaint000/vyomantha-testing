@@ -1,18 +1,17 @@
 #!/bin/bash
 set -e
 
-# Start local Redis in the background (used for transient caching & queues)
+# Start local Redis server (used inside the container for caching & queues)
 echo "Starting local Redis server..."
 redis-server --daemonize yes
 
-# Wait for local Redis to be fully responsive
 until redis-cli ping | grep -q PONG; do
   echo "Waiting for local Redis..."
   sleep 1
 done
 echo "Local Redis is up and running."
 
-# Wait for remote MariaDB/MySQL database
+# Wait for the cloud MySQL/MariaDB database
 echo "Waiting for Cloud Database (${DB_HOST}:${DB_PORT})...."
 python3 -c "
 import socket
@@ -39,62 +38,69 @@ while True:
         time.sleep(3)
 "
 
-# Build and configure the bench
-if [ ! -d "/home/frappe/frappe-bench/apps/frappe" ]; then
-    echo "Bench folder not found. Initializing a new Frappe Bench..."
-    bench init --skip-redis-config-generation frappe-bench
-    cd frappe-bench
+cd /home/frappe/frappe-bench
+
+# Apply environment configurations dynamically
+bench set-mariadb-host "$DB_HOST"
+bench set-config -g db_port "$DB_PORT"
+bench set-config -g allow_cors "$FRONTEND_URL"
+bench set-config -g ignore_csrf 1
+
+# Route Redis traffic to internal local instance
+bench set-redis-cache-host redis://127.0.0.1:6379
+bench set-redis-queue-host redis://127.0.0.1:6379
+bench set-redis-socketio-host redis://127.0.0.1:6379
+
+# Render runs on ephemeral filesystems. Recreate the site folder configuration if missing.
+if [ ! -d "sites/lms.render" ]; then
+    echo "Site config folder for lms.render not found. Restoring configuration..."
+    mkdir -p sites/lms.render
     
-    # Update DB configurations to use cloud details
-    bench set-mariadb-host "$DB_HOST"
-    bench set-config -g db_port "$DB_PORT"
+    # Write the site config pointing to the external DB
+    cat <<EOF > sites/lms.render/site_config.json
+{
+ "db_name": "$DB_NAME",
+ "db_password": "$DB_PASSWORD",
+ "db_type": "mariadb",
+ "db_user": "$DB_USER",
+ "encryption_key": "frappe-encryption-key-for-security",
+ "allow_cors": "$FRONTEND_URL"
+}
+EOF
     
-    # Route Redis tasks through local container Redis
-    bench set-redis-cache-host redis://127.0.0.1:6379
-    bench set-redis-queue-host redis://127.0.0.1:6379
-    bench set-redis-socketio-host redis://127.0.0.1:6379
-
-    # Set CORS to allow requests from the Vercel/Frontend URL
-    bench set-config -g allow_cors "$FRONTEND_URL"
-    bench set-config -g ignore_csrf 1
-
-    # Remove Redis and Watch processes from standard supervisor configs
-    sed -i '/redis/d' ./Procfile
-    sed -i '/watch/d' ./Procfile
-
-    echo "Fetching LMS and Payments apps..."
-    git clone https://github.com/frappe/payments.git apps/payments --depth 1
-    rm -f apps/payments/package.json
-    ./env/bin/pip install -e ./apps/payments
-
-    git clone https://github.com/frappe/lms.git apps/lms --depth 1
-    rm -rf apps/lms/frontend apps/lms/package.json
-    ./env/bin/pip install -e ./apps/lms
-
-    printf "frappe\npayments\nlms\n" > sites/apps.txt
-
-    echo "Provisioning new site on cloud database..."
-    bench new-site lms.render \
-      --db-name "$DB_NAME" \
-      --mariadb-root-username "$DB_USER" \
-      --mariadb-root-password "$DB_PASSWORD" \
-      --admin-password "${ADMIN_PASSWORD:-admin}" \
-      --no-mariadb-socket \
-      --force
-
-    bench --site lms.render install-app payments
-    bench --site lms.render install-app lms
-    bench --site lms.render set-config allow_cors "$FRONTEND_URL"
-    bench --site lms.render clear-cache
+    # Check if the database has tables (if it does not, we run bench new-site)
+    echo "Checking database initialization state..."
+    if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "USE $DB_NAME; SHOW TABLES;" > /dev/null 2>&1; then
+        echo "Database is empty or unitialized. Executing first-time bench new-site installation..."
+        # Clean config folder temporarily so new-site can initialize
+        rm -rf sites/lms.render
+        
+        bench new-site lms.render \
+          --db-name "$DB_NAME" \
+          --mariadb-root-username "$DB_USER" \
+          --mariadb-root-password "$DB_PASSWORD" \
+          --admin-password "${ADMIN_PASSWORD:-admin}" \
+          --no-mariadb-socket \
+          --force
+        
+        bench --site lms.render install-app payments
+        bench --site lms.render install-app lms
+    else
+        echo "Database is already seeded. Connecting to existing database tables..."
+        bench --site lms.render set-config allow_cors "$FRONTEND_URL"
+        bench --site lms.render clear-cache
+    fi
+    
     bench use lms.render
-else
-    echo "Bench already exists. Resuming services..."
-    cd frappe-bench
 fi
 
-# Align Bench web service with Render's dynamic Port binding
+# Run database migrations (ensures schemas align with installed codebase)
+echo "Running database migrations..."
+bench --site lms.render migrate
+
+# Update Procfile port mapping to Render's dynamic binding
 sed -i "s/bench serve.*/bench serve --port ${PORT:-8000}/g" ./Procfile
 
-# Start the Bench web server
+# Start the server (binds instantly to port 8000/dynamic port)
 echo "Starting Frappe Bench web server..."
 bench start

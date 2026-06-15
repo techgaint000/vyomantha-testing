@@ -1,19 +1,45 @@
 FROM frappe/bench:latest
 
-# Install redis-server and mariadb-client as root
+# Switch to root to install system dependencies
 USER root
 RUN apt-get update && apt-get install -y redis-server mariadb-client && rm -rf /var/lib/apt/lists/*
 
-# Set up runtime user
+# Switch to frappe user
 USER frappe
 WORKDIR /home/frappe
 
-# Copy init script
+# Initialize the bench during the build phase (no Redis/DB required for file prep)
+RUN bench init --skip-redis-config-generation frappe-bench
+
+WORKDIR /home/frappe/frappe-bench
+
+# Clone and install Payments & LMS apps at build time
+RUN git clone https://github.com/frappe/payments.git apps/payments --depth 1 \
+    && rm -f apps/payments/package.json \
+    && ./env/bin/pip install -e ./apps/payments
+
+RUN git clone https://github.com/frappe/lms.git apps/lms --depth 1 \
+    && rm -rf apps/lms/frontend apps/lms/package.json \
+    && ./env/bin/pip install -e ./apps/lms
+
+# Configure apps registry file
+RUN printf "frappe\npayments\nlms\n" > sites/apps.txt
+
+# Remove Redis/Watch from Procfile so they don't spawn redundantly
+RUN sed -i '/redis/d' ./Procfile \
+    && sed -i '/watch/d' ./Procfile
+
+# Build assets during the build phase (saves runtime CPU and RAM)
+RUN bench build
+
+# Copy startup orchestration script as root
+USER root
 COPY --chown=frappe:frappe init-render.sh /home/frappe/init-render.sh
 RUN chmod +x /home/frappe/init-render.sh
 
-# Expose default HTTP port
+USER frappe
+WORKDIR /home/frappe
 EXPOSE 8000
 
-# Start script
+# Run startup script
 CMD ["/home/frappe/init-render.sh"]
