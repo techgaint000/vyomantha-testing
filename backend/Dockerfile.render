@@ -29,6 +29,10 @@ RUN printf "frappe\npayments\nlms\n" > sites/apps.txt
 COPY --chown=frappe:frappe patch_schemas.py /home/frappe/frappe-bench/patch_schemas.py
 RUN python3 /home/frappe/frappe-bench/patch_schemas.py && rm /home/frappe/frappe-bench/patch_schemas.py
 
+# Copy and execute statement time patching script to bypass SET STATEMENT queries
+COPY --chown=frappe:frappe patch_statement_time.py /home/frappe/frappe-bench/patch_statement_time.py
+RUN python3 /home/frappe/frappe-bench/patch_statement_time.py && rm /home/frappe/frappe-bench/patch_statement_time.py
+
 # Remove Redis/Watch from Procfile so they don't spawn redundantly
 RUN sed -i '/redis/d' ./Procfile \
     && sed -i '/watch/d' ./Procfile

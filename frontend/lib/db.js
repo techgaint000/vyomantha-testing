@@ -5,7 +5,7 @@ const pool = mysql.createPool({
   port: parseInt(process.env.DB_PORT || '3306'),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '123',
-  database: process.env.DB_NAME || 'pdf_resources_db',
+  database: process.env.DB_RESOURCES_NAME || process.env.DB_NAME || 'pdf_resources_db',
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined,
   waitForConnections: true,
   connectionLimit: 10,
