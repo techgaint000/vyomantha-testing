@@ -100,7 +100,7 @@ if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/
     
     # Drop all partially created tables to avoid "Table already exists" conflicts
     mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -Nse 'show tables' "$DB_NAME" 2>/dev/null | while read table; do
-        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`$table\`;" "$DB_NAME" 2>/dev/null
+        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`$table\`;" "$DB_NAME" 2>/dev/null || mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "SET FOREIGN_KEY_CHECKS = 0; DROP SEQUENCE \`$table\`;" "$DB_NAME" 2>/dev/null || true
     done
     
     echo "Wipe complete. Running bench new-site..."
