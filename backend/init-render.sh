@@ -117,7 +117,7 @@ for app_dir in app_dirs:
                     if isinstance(data, dict) and "fields" in data:
                         for field in data["fields"]:
                             if field.get("fieldtype") in text_types and "default" in field:
-                                print(f"Removing default for {field.get(\"fieldname\")} ({field.get(\"fieldtype\")}) in {os.path.basename(filepath)}")
+                                print("Removing default for {} ({}) in {}".format(field.get("fieldname"), field.get("fieldtype"), os.path.basename(filepath)))
                                 del field["default"]
                                 modified = True
                     
