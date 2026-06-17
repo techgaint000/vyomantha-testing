@@ -87,6 +87,47 @@ if [ ! -f "sites/lms.render/site_config.json" ]; then
 }
 EOF
     
+    # Patch Frappe & LMS DocType JSON files to remove default values for TEXT/BLOB/JSON columns
+    # (TiDB/MySQL does not support default values for these column types)
+    echo "Patching DocType JSON schemas to remove unsupported default values for TEXT/JSON columns..."
+    python3 -c '
+import os
+import json
+
+app_dirs = [
+    "/home/frappe/frappe-bench/apps/frappe",
+    "/home/frappe/frappe-bench/apps/lms",
+    "/home/frappe/frappe-bench/apps/payments"
+]
+
+text_types = {"Text", "Long Text", "Small Text", "Medium Text", "Code", "JSON", "Blob"}
+
+for app_dir in app_dirs:
+    if not os.path.exists(app_dir):
+        continue
+    for root, dirs, files in os.walk(app_dir):
+        for file in files:
+            if file.endswith(".json"):
+                filepath = os.path.join(root, file)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    
+                    modified = False
+                    if isinstance(data, dict) and "fields" in data:
+                        for field in data["fields"]:
+                            if field.get("fieldtype") in text_types and "default" in field:
+                                print(f"Removing default for {field.get(\"fieldname\")} ({field.get(\"fieldtype\")}) in {os.path.basename(filepath)}")
+                                del field["default"]
+                                modified = True
+                    
+                    if modified:
+                        with open(filepath, "w", encoding="utf-8") as f:
+                            json.dump(data, f, indent=1, ensure_ascii=False)
+                except Exception as e:
+                    pass
+'
+
     # Check if the database has tables and is fully initialized
     echo "Checking database initialization state..."
     if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "USE $DB_NAME; SHOW TABLES;" 2>/dev/null | grep -q "tabPatch Log"; then
