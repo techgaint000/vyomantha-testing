@@ -93,7 +93,7 @@ EOF
         echo "Database is empty, uninitialized, or partially initialized. Executing bench reinstall..."
         
         # Run bench reinstall to safely recreate tables and populate default metadata/users
-        bench --site lms.render reinstall --yes --admin-password "${ADMIN_PASSWORD:-admin}"
+        bench --site lms.render reinstall --yes --mariadb-root-username "$DB_USER" --mariadb-root-password "$DB_PASSWORD" --admin-password "${ADMIN_PASSWORD:-admin}"
 
         # Install payments and LMS apps
         echo "Installing payments & lms applications..."
