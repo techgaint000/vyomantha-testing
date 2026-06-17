@@ -93,8 +93,17 @@ bench set-redis-socketio-host redis://127.0.0.1:6379
 # Check if the database has tables and is fully initialized (checks for LMS Course table from the lms app)
 echo "Checking database initialization state..."
 if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "USE $DB_NAME; SHOW TABLES;" 2>/dev/null | grep -qi "lms course"; then
-    echo "Database is incomplete or uninitialized. Executing bench new-site with --no-setup-db..."
+    echo "Database is incomplete or uninitialized. Wiping tables and folder to ensure a clean non-interactive install..."
     
+    # Delete pre-existing site folder to prevent overwrite confirmation prompts
+    rm -rf sites/lms.render
+    
+    # Drop all partially created tables to avoid "Table already exists" conflicts
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -Nse 'show tables' "$DB_NAME" 2>/dev/null | while read table; do
+        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/etc/ssl/certs/ca-certificates.crt -e "SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`$table\`;" "$DB_NAME" 2>/dev/null
+    done
+    
+    echo "Wipe complete. Running bench new-site..."
     # Initialize site tables and default users in the pre-existing database
     bench new-site lms.render \
       --db-name "$DB_NAME" \
