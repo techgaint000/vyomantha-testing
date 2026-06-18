@@ -278,7 +278,6 @@ export async function createCourse(courseData) {
       }
     } catch (e) {
       console.error("Failed to create course via Frappe REST API. Falling back to local state.", e);
-      throw e;
     }
   }
 
@@ -332,7 +331,6 @@ export async function updateCourse(id, courseData) {
       }
     } catch (e) {
       console.error("Failed to update course via Frappe REST API. Falling back to local state.", e);
-      throw e;
     }
   }
 
@@ -646,7 +644,6 @@ export async function saveCourseSyllabus(courseId, syllabus) {
       return getCourseSyllabus(courseId);
     } catch (e) {
       console.error("Failed to sync course syllabus outline with Frappe REST server.", e);
-      throw e;
     }
   }
 

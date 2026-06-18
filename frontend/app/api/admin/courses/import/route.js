@@ -204,99 +204,109 @@ export async function POST(request) {
     }
 
     // Write courses, chapters, and lessons to Frappe
-    for (const course of coursesToCreate) {
-      // Try to bootstrap the category first
-      if (course.category) {
-        try {
-          await frappePost("LMS Course Category", {
-            category_name: sanitizeTitle(course.category)
-          });
-        } catch (e) {
-          console.warn(`LMS Course Category "${course.category}" could not be created or already exists:`, e.message);
+    try {
+      for (const course of coursesToCreate) {
+        // Try to bootstrap the category first
+        if (course.category) {
+          try {
+            await frappePost("LMS Course Category", {
+              category_name: sanitizeTitle(course.category)
+            });
+          } catch (e) {
+            console.warn(`LMS Course Category "${course.category}" could not be created or already exists:`, e.message);
+          }
         }
-      }
 
-      // 1. Create LMS Course with Link Validation fallback
-      let courseDoc;
-      try {
-        courseDoc = await frappePost("LMS Course", {
-          title: sanitizeTitle(course.title),
-          published: course.status === "Published" ? 1 : 0,
-          category: sanitizeTitle(course.category) || "Web Development",
-          short_introduction: course.short_introduction,
-          description: course.description,
-          instructors: [{ instructor: "Administrator" }]
-        });
-      } catch (err) {
-        if (err.message.includes("Category") || err.message.includes("LinkValidationError")) {
-          console.warn(`Failed to create course with category "${course.category}", retrying with "Web Development"...`);
+        // 1. Create LMS Course with Link Validation fallback
+        let courseDoc;
+        try {
           courseDoc = await frappePost("LMS Course", {
             title: sanitizeTitle(course.title),
             published: course.status === "Published" ? 1 : 0,
-            category: "Web Development",
+            category: sanitizeTitle(course.category) || "Web Development",
             short_introduction: course.short_introduction,
             description: course.description,
             instructors: [{ instructor: "Administrator" }]
           });
-        } else {
-          throw err;
+        } catch (err) {
+          if (err.message.includes("Category") || err.message.includes("LinkValidationError")) {
+            console.warn(`Failed to create course with category "${course.category}", retrying with "Web Development"...`);
+            courseDoc = await frappePost("LMS Course", {
+              title: sanitizeTitle(course.title),
+              published: course.status === "Published" ? 1 : 0,
+              category: "Web Development",
+              short_introduction: course.short_introduction,
+              description: course.description,
+              instructors: [{ instructor: "Administrator" }]
+            });
+          } else {
+            throw err;
+          }
         }
-      }
-      const courseId = courseDoc.name;
+        const courseId = courseDoc.name;
 
-      const chapterIds = [];
-      // 2. Create Chapters
-      for (const chapter of course.chapters) {
-        const chDoc = await frappePost("Course Chapter", {
-          title: sanitizeTitle(chapter.title),
-          course: courseId
-        });
-        const chapterId = chDoc.name;
-        chapterIds.push(chapterId);
-
-        const lessonIds = [];
-        // 3. Create Lessons
-        for (const lesson of chapter.lessons) {
-          const notesStr = JSON.stringify({
-            pts: lesson.pts,
-            quizQuestions: []
+        const chapterIds = [];
+        // 2. Create Chapters
+        for (const chapter of course.chapters) {
+          const chDoc = await frappePost("Course Chapter", {
+            title: sanitizeTitle(chapter.title),
+            course: courseId
           });
+          const chapterId = chDoc.name;
+          chapterIds.push(chapterId);
 
-          const lDoc = await frappePost("Course Lesson", {
-            title: sanitizeTitle(lesson.title),
-            chapter: chapterId,
-            course: courseId,
-            youtube: lesson.vid,
-            body: lesson.overview,
-            instructor_notes: notesStr
+          const lessonIds = [];
+          // 3. Create Lessons
+          for (const lesson of chapter.lessons) {
+            const notesStr = JSON.stringify({
+              pts: lesson.pts,
+              quizQuestions: []
+            });
+
+            const lDoc = await frappePost("Course Lesson", {
+              title: sanitizeTitle(lesson.title),
+              chapter: chapterId,
+              course: courseId,
+              youtube: lesson.vid,
+              body: lesson.overview,
+              instructor_notes: notesStr
+            });
+            lessonIds.push(lDoc.name);
+          }
+
+          // Link lessons to chapter
+          await frappePut("Course Chapter", chapterId, {
+            lessons: lessonIds.map(lId => ({ lesson: lId }))
           });
-          lessonIds.push(lDoc.name);
         }
 
-        // Link lessons to chapter
-        await frappePut("Course Chapter", chapterId, {
-          lessons: lessonIds.map(lId => ({ lesson: lId }))
+        // Link chapters to course
+        await frappePut("LMS Course", courseId, {
+          chapters: chapterIds.map(chId => ({ chapter: chId }))
+        });
+
+        importedList.push({
+          id: courseId,
+          title: course.title,
+          chaptersCount: course.chapters.length,
+          lessonsCount: course.chapters.reduce((sum, ch) => sum + ch.lessons.length, 0)
         });
       }
 
-      // Link chapters to course
-      await frappePut("LMS Course", courseId, {
-        chapters: chapterIds.map(chId => ({ chapter: chId }))
+      return NextResponse.json({
+        success: true,
+        localFallback: false,
+        imported: importedList
       });
 
-      importedList.push({
-        id: courseId,
-        title: course.title,
-        chaptersCount: course.chapters.length,
-        lessonsCount: course.chapters.reduce((sum, ch) => sum + ch.lessons.length, 0)
+    } catch (frappeError) {
+      console.warn("Frappe REST operations failed, falling back to local simulation mode:", frappeError.message);
+      return NextResponse.json({
+        success: true,
+        localFallback: true,
+        data: coursesToCreate
       });
     }
-
-    return NextResponse.json({
-      success: true,
-      localFallback: false,
-      imported: importedList
-    });
 
   } catch (error) {
     console.error("CSV Import error:", error);
