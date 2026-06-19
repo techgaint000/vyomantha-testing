@@ -80,7 +80,7 @@ cat <<EOF > sites/lms.render/site_config.json
  "db_type": "mariadb",
  "db_user": "$DB_USER",
  "db_ssl_ca": "/etc/ssl/certs/ca-certificates.crt",
- "encryption_key": "frappe-encryption-key-for-security",
+ "encryption_key": "8kAnz-VWclIhMghrU8g_39K2setlLtLR_9PJL1BjRxY=",
  "allow_cors": "*"
 }
 EOF
