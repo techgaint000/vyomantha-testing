@@ -10,9 +10,17 @@ def main():
     with open(api_path, 'r') as f:
         content = f.read()
 
-    if 'get_google_auth_url' in content:
-        print("get_google_auth_url already exists in api.py. Skipping patch.")
-        return
+    # If an old get_google_auth_url exists, remove it and everything after it
+    if 'def get_google_auth_url' in content:
+        print("Found existing get_google_auth_url. Removing old definition first...")
+        # Split at the decorator or the function definition
+        if '@frappe.whitelist(allow_guest=True)\ndef get_google_auth_url' in content:
+            content = content.split('@frappe.whitelist(allow_guest=True)\ndef get_google_auth_url')[0]
+        elif 'def get_google_auth_url' in content:
+            # Fallback split
+            content = content.split('def get_google_auth_url')[0]
+            # Strip trailing decorator if present
+            content = content.rstrip().rstrip('@frappe.whitelist(allow_guest=True)').rstrip()
 
     patch_code = """
 
@@ -30,8 +38,8 @@ def get_google_auth_url(redirect_to=None):
         }
 """
 
-    with open(api_path, 'a') as f:
-        f.write(patch_code)
+    with open(api_path, 'w') as f:
+        f.write(content.strip() + patch_code)
     print("✅ Patched apps/lms/lms/lms/api.py successfully!")
 
 if __name__ == '__main__':
