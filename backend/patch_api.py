@@ -10,17 +10,19 @@ def main():
     with open(api_path, 'r') as f:
         content = f.read()
 
-    # If an old get_google_auth_url exists, remove it and everything after it
-    if 'def get_google_auth_url' in content:
-        print("Found existing get_google_auth_url. Removing old definition first...")
-        # Split at the decorator or the function definition
-        if '@frappe.whitelist(allow_guest=True)\ndef get_google_auth_url' in content:
-            content = content.split('@frappe.whitelist(allow_guest=True)\ndef get_google_auth_url')[0]
-        elif 'def get_google_auth_url' in content:
-            # Fallback split
-            content = content.split('def get_google_auth_url')[0]
-            # Strip trailing decorator if present
-            content = content.rstrip().rstrip('@frappe.whitelist(allow_guest=True)').rstrip()
+    # Clean out any old definitions of our custom functions to avoid duplicates
+    for func_name in ['get_google_auth_url', 'test_google_auth_traceback']:
+        if func_name in content:
+            print(f"Found existing {func_name}. Stripping old definition...")
+            # We split by name, and take everything before it.
+            # Since we append our custom code at the end, the first occurrence of our custom function
+            # is where the custom code starts.
+            content = content.split('def ' + func_name)[0]
+            # Strip trailing decorators
+            content = content.rstrip()
+            if content.endswith('@frappe.whitelist(allow_guest=True)'):
+                content = content[:-len('@frappe.whitelist(allow_guest=True)')]
+            content = content.rstrip()
 
     patch_code = """
 
@@ -36,11 +38,24 @@ def get_google_auth_url(redirect_to=None):
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+
+@frappe.whitelist(allow_guest=True)
+def test_google_auth_traceback(redirect_to=None):
+    import frappe
+    import traceback
+    try:
+        from frappe.utils.oauth import get_oauth2_authorize_url
+        return get_oauth2_authorize_url("google", redirect_to or "http://localhost:3000/auth/callback")
+    except Exception as e:
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 """
 
     with open(api_path, 'w') as f:
         f.write(content.strip() + patch_code)
-    print("✅ Patched apps/lms/lms/lms/api.py successfully!")
+    print("✅ Patched apps/lms/lms/lms/api.py successfully with test_google_auth_traceback!")
 
 if __name__ == '__main__':
     main()
