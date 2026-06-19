@@ -104,5 +104,44 @@ for s in students:
     print(f"Setting password for {email} to 'student123'...")
     update_password(user=email, pwd="student123", logout_all_sessions=False)
 
+# Seed Google Social Login Key
+try:
+    import os
+    google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    
+    if google_client_id and google_client_secret:
+        print("Seeding Google Social Login Key...")
+        if not frappe.db.exists("Social Login Key", "google"):
+            doc = frappe.get_doc({
+                "doctype": "Social Login Key",
+                "name": "google",
+                "enable_social_login": 1,
+                "social_login_provider": "Google",
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
+                "provider_name": "Google",
+                "base_url": "https://accounts.google.com",
+                "authorize_url": "/o/oauth2/v2/auth",
+                "access_token_url": "/oauth2/v4/token",
+                "redirect_url": "https://vyomanta.onrender.com/api/method/frappe.integrations.oauth2_logins.login_via_google",
+                "api_endpoint": "https://www.googleapis.com/oauth2/v2/userinfo",
+                "user_id_property": "email",
+                "custom_base_url": 0,
+                "auth_url_data": '{"scope": "openid https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email", "response_type": "code"}'
+            })
+            doc.insert(ignore_permissions=True)
+            print("Google Social Login Key inserted successfully via Frappe API.")
+        else:
+            doc = frappe.get_doc("Social Login Key", "google")
+            doc.client_id = google_client_id
+            doc.client_secret = google_client_secret
+            doc.save(ignore_permissions=True)
+            print("Google Social Login Key updated successfully via Frappe API.")
+    else:
+        print("Skipping Google Social Login Key seeding: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET environment variables not set.")
+except Exception as e:
+    print(f"Failed to seed Google Social Login Key: {e}")
+
 frappe.db.commit()
 print("Students bootstrap completed successfully!")
