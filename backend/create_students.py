@@ -122,8 +122,8 @@ try:
                 "client_secret": google_client_secret,
                 "provider_name": "Google",
                 "base_url": "https://accounts.google.com",
-                "authorize_url": "/o/oauth2/v2/auth",
-                "access_token_url": "/oauth2/v4/token",
+                "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+                "access_token_url": "https://oauth2.googleapis.com/token",
                 "redirect_url": "https://vyomanta.onrender.com/api/method/frappe.integrations.oauth2_logins.login_via_google",
                 "api_endpoint": "https://www.googleapis.com/oauth2/v2/userinfo",
                 "user_id_property": "email",
@@ -138,8 +138,8 @@ try:
             doc.client_secret = google_client_secret
             doc.custom_base_url = 1
             doc.base_url = "https://accounts.google.com"
-            doc.authorize_url = "/o/oauth2/v2/auth"
-            doc.access_token_url = "/oauth2/v4/token"
+            doc.authorize_url = "https://accounts.google.com/o/oauth2/v2/auth"
+            doc.access_token_url = "https://oauth2.googleapis.com/token"
             doc.redirect_url = "https://vyomanta.onrender.com/api/method/frappe.integrations.oauth2_logins.login_via_google"
             doc.api_endpoint = "https://www.googleapis.com/oauth2/v2/userinfo"
             doc.save(ignore_permissions=True)
