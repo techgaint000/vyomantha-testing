@@ -82,10 +82,10 @@ export default function LayoutWrapper({ children }) {
         width: '100vw',
         minWidth: '100vw',
         minHeight: '100vh',
-        background: T.bg,
+        background: 'var(--bg)',
         alignItems: 'center',
         justifyContent: 'center',
-        color: T.text,
+        color: 'var(--text)',
         fontFamily: 'var(--font-outfit), sans-serif',
         position: 'fixed',
         top: 0,
@@ -97,11 +97,11 @@ export default function LayoutWrapper({ children }) {
             width: 32,
             height: 32,
             borderRadius: '50%',
-            border: `2px solid ${T.accent}33`,
-            borderTopColor: T.accent,
+            border: '2px solid var(--border)',
+            borderTopColor: 'var(--accent)',
             animation: 'spin 1s linear infinite'
           }} />
-          <div style={{ fontSize: 14, color: T.muted }}>Loading LMS Portal...</div>
+          <div style={{ fontSize: 14, color: 'var(--muted)' }}>Loading LMS Portal...</div>
         </div>
       </div>
     );
@@ -111,13 +111,13 @@ export default function LayoutWrapper({ children }) {
 
   // Auth pages (like /login) render directly without a sidebar
   if (isAuthPage || !user) {
-    return <div style={{ minHeight: '100vh', background: T.bg, color: T.text }}>{children}</div>;
+    return <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>{children}</div>;
   }
 
   const isAdminRoute = pathname.startsWith('/admin');
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: T.bg, color: T.text, width: '100%' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)', width: '100%' }}>
       {isAdminRoute ? <AdminSidebar /> : <Sidebar />}
       <div className="sidebar-content-area" style={{ flex: 1, overflowY: 'auto', maxHeight: '100vh' }}>
         {children}

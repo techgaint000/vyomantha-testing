@@ -88,6 +88,13 @@ export default function GeneralTutor() {
       if (raw1) setTextSessions(JSON.parse(raw1));
       const raw2 = localStorage.getItem(voiceSessKey);
       if (raw2) setVoiceSessions(JSON.parse(raw2));
+
+      // Prefill query if coming from the dashboard quick-ask box
+      const prefill = localStorage.getItem('tutor_prefill_query');
+      if (prefill) {
+        setTopic(prefill);
+        localStorage.removeItem('tutor_prefill_query');
+      }
     } catch {}
   }, []);
 

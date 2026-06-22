@@ -164,10 +164,10 @@ export default function CoursePage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', minHeight: '100vh', background: '#07080F', alignItems: 'center', justifyContent: 'center', color: '#DDE3F2' }}>
+      <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)', alignItems: 'center', justifyContent: 'center', color: 'var(--text)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid rgba(91, 140, 248, 0.2)', borderTopColor: '#5B8CF8', animation: 'spin 1s linear infinite' }} />
-          <div style={{ fontSize: 14, color: '#647298' }}>Loading courses...</div>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin 1s linear infinite' }} />
+          <div style={{ fontSize: 14, color: 'var(--muted)' }}>Loading courses...</div>
         </div>
       </div>
     );
@@ -175,10 +175,10 @@ export default function CoursePage() {
 
   if (detailsLoading) {
     return (
-      <div style={{ display: 'flex', minHeight: '100vh', background: '#07080F', alignItems: 'center', justifyContent: 'center', color: '#DDE3F2' }}>
+      <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)', alignItems: 'center', justifyContent: 'center', color: 'var(--text)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid rgba(91, 140, 248, 0.2)', borderTopColor: '#5B8CF8', animation: 'spin 1s linear infinite' }} />
-          <div style={{ fontSize: 14, color: '#647298' }}>Loading course syllabus...</div>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin 1s linear infinite' }} />
+          <div style={{ fontSize: 14, color: 'var(--muted)' }}>Loading course syllabus...</div>
         </div>
       </div>
     );
