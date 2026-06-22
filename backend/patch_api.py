@@ -27,7 +27,7 @@ def main():
     patch_code = """
 
 @frappe.whitelist(allow_guest=True)
-def get_google_auth_url(redirect_to=None):
+def get_google_auth_url(redirect_to: str = None):
     import frappe
     import traceback
     try:
@@ -40,7 +40,7 @@ def get_google_auth_url(redirect_to=None):
         }
 
 @frappe.whitelist(allow_guest=True)
-def test_google_auth_traceback(redirect_to=None):
+def test_google_auth_traceback(redirect_to: str = None):
     import frappe
     import traceback
     try:
