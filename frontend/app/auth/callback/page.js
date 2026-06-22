@@ -47,9 +47,8 @@ export default function AuthCallback() {
         const userData = await userRes.json();
         const userDoc = userData.data;
         
-        // Determine role
-        const isSystemManager = userDoc.roles?.some(r => r.role === 'System Manager' || r.role === 'Administrator') || email === 'Administrator';
-        const role = isSystemManager ? 'Administrator' : 'Student';
+        // Google OAuth logins are treated as students; admin page is reserved for password-based admin login
+        const role = 'Student';
         
         const userProfile = {
           email: userDoc.email,
@@ -78,13 +77,9 @@ export default function AuthCallback() {
         
         setStatus('Welcome! Redirecting to workspace...');
         
-        // Redirect based on role
+        // Redirect to student workspace
         setTimeout(() => {
-          if (role === 'Administrator') {
-            router.replace('/admin');
-          } else {
-            router.replace('/');
-          }
+          router.replace('/');
         }, 800);
         
       } catch (err) {
