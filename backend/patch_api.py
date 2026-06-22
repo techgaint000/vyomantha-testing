@@ -53,6 +53,29 @@ def test_google_auth_traceback(redirect_to: str = None):
         }
 
 @frappe.whitelist(allow_guest=True)
+def get_bench_logs(filename: str = None):
+    import os
+    logs_dir = "/home/frappe/frappe-bench/logs"
+    if not os.path.exists(logs_dir):
+        return f"Logs directory not found at {logs_dir}"
+    
+    if not filename:
+        return {
+            "files": os.listdir(logs_dir),
+            "site_logs": os.listdir("/home/frappe/frappe-bench/sites/lms.render/logs") if os.path.exists("/home/frappe/frappe-bench/sites/lms.render/logs") else []
+        }
+    
+    filepath = os.path.join(logs_dir, filename)
+    if not os.path.exists(filepath):
+        filepath = os.path.join("/home/frappe/frappe-bench/sites/lms.render/logs", filename)
+        if not os.path.exists(filepath):
+            return f"File {filename} not found"
+            
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+        return "".join(lines[-200:])
+
+@frappe.whitelist(allow_guest=True)
 def get_api_file():
     with open(__file__, 'r') as f:
         return f.read()
