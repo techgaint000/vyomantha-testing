@@ -196,7 +196,7 @@ export default function CoursePage() {
     const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
 
     return (
-      <div style={{ padding: isMobile ? '20px 16px' : '32px 36px', maxWidth: 860, fontFamily: 'var(--font-outfit), sans-serif' }}>
+      <div style={{ padding: isMobile ? '20px 16px' : '32px 36px', fontFamily: 'var(--font-outfit), sans-serif' }}>
         
         {/* Back button */}
         <button
@@ -399,7 +399,7 @@ export default function CoursePage() {
 
   // Render Courses Directory
   return (
-    <div style={{ padding: isMobile ? '20px 16px' : '32px 36px', maxWidth: 1000, fontFamily: 'var(--font-outfit), sans-serif' }}>
+    <div style={{ padding: isMobile ? '20px 16px' : '32px 36px', fontFamily: 'var(--font-outfit), sans-serif' }}>
       
       {/* Directory Title */}
       <div style={{ marginBottom: 28 }}>
