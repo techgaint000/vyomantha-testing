@@ -15,6 +15,10 @@ export default function CoursePage() {
   const rPad = isMobile ? 16 : 36;
   const [isPlaygroundOpen, setIsPlaygroundOpen] = useState(false);
 
+  const outerStyle = isPlaygroundOpen && !isMobile
+    ? { padding: '32px 24px', display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 28, fontFamily: 'var(--font-outfit), sans-serif', width: '100%', maxWidth: '100%' }
+    : { padding: isMobile ? '20px 16px' : '32px 36px', fontFamily: 'var(--font-outfit), sans-serif' };
+
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCourse, setSelectedCourse] = useState(null);
@@ -197,10 +201,6 @@ export default function CoursePage() {
     const total = courseLessons.length;
     const done = courseLessons.filter(l => completed[l.id]).length;
     const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
-
-    const outerStyle = isPlaygroundOpen && !isMobile
-      ? { padding: '32px 24px', display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 28, fontFamily: 'var(--font-outfit), sans-serif', width: '100%', maxWidth: '100%' }
-      : { padding: isMobile ? '20px 16px' : '32px 36px', fontFamily: 'var(--font-outfit), sans-serif' };
 
     return (
       <div style={outerStyle}>
