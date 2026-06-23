@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 import {
   Brain, CheckCircle, ChevronRight, Clock,
   Loader2, Sparkles, RotateCcw, ArrowLeft, Send,
-  FileText, Award, AlertCircle, ThumbsUp, HelpCircle
+  FileText, Award, AlertCircle, ThumbsUp, HelpCircle, Terminal
 } from 'lucide-react';
 import { T, COURSE, geminiCall, buildQuizPrompt, parseQuizOutput, getCourseDetails } from '@/lib/lms-data';
 import { useMediaQuery, isMobileMQ } from '@/lib/useMediaQuery';
+import Playground from './Playground';
 import {
   getCourses, getQuizzes, submitQuizResponse, getQuizSubmissions,
   getAssignments, submitAssignmentResponse, getAssignmentSubmissions
@@ -17,6 +18,7 @@ import {
 export default function LessonPage({ lesson, completed = {}, onComplete }) {
   const router  = useRouter();
   const [next, setNext] = useState(null);
+  const [isPlaygroundOpen, setIsPlaygroundOpen] = useState(false);
   
   // Resolve module: prefer lesson.module, fall back to matching module in static COURSE
   const mod = lesson.module || COURSE.modules.find(m => m.lessons.some(l => l.id === lesson.id)) || COURSE.modules[0];
@@ -235,12 +237,40 @@ export default function LessonPage({ lesson, completed = {}, onComplete }) {
     }
   };
 
+  const outerStyle = isPlaygroundOpen && !isMobile
+    ? { padding: '32px 24px', display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 28, fontFamily: 'var(--font-outfit), sans-serif', width: '100%', maxWidth: '100%' }
+    : { padding: `32px ${rPad}px`, maxWidth: 900, fontFamily: 'var(--font-outfit), sans-serif', margin: '0 auto' };
+
   return (
-    <div style={{ padding: `32px ${rPad}px`, maxWidth: 900, fontFamily: 'var(--font-outfit), sans-serif', margin: '0 auto' }}>
-      <button onClick={() => router.push('/courses')}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 13, marginBottom: isMobile ? 14 : 22, padding: 0 }}>
-        <ArrowLeft size={15} /> Back to Course
-      </button>
+    <div style={outerStyle}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? 14 : 22, flexWrap: 'wrap', gap: 10 }}>
+          <button onClick={() => router.push('/courses')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 13, padding: 0 }}>
+            <ArrowLeft size={15} /> Back to Course
+          </button>
+          
+          <button
+            onClick={() => setIsPlaygroundOpen(!isPlaygroundOpen)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: isPlaygroundOpen ? `${T.accent}15` : 'transparent',
+              border: `1px solid ${isPlaygroundOpen ? T.accent : 'var(--border)'}`,
+              color: isPlaygroundOpen ? T.accent : 'var(--text)',
+              cursor: 'pointer',
+              fontSize: 12.5,
+              fontWeight: 600,
+              padding: '6px 14px',
+              borderRadius: 8,
+              transition: 'all 0.15s'
+            }}
+          >
+            <Terminal size={14} />
+            {isPlaygroundOpen ? 'Close Playground' : 'Practice Playground'}
+          </button>
+        </div>
 
       {/* Title */}
       <div style={{ marginBottom: 20 }}>
@@ -735,8 +765,21 @@ export default function LessonPage({ lesson, completed = {}, onComplete }) {
           </button>
         )}
       </div>
+
+      {isPlaygroundOpen && isMobile && (
+        <div style={{ marginTop: 24, height: 400 }}>
+          <Playground initialCode={`# Practice Python for: ${lesson.title}\n# Write your code here\n\n`} />
+        </div>
+      )}
     </div>
-  );
+
+    {isPlaygroundOpen && !isMobile && (
+      <div style={{ position: 'sticky', top: 32, height: 'calc(100vh - 64px)', minHeight: 500 }}>
+        <Playground initialCode={`# Practice Python for: ${lesson.title}\n# Write your code here\n\n`} />
+      </div>
+    )}
+  </div>
+);
 }
 
 function getYoutubeEmbedUrl(vid) {
