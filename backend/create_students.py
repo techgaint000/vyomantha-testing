@@ -128,6 +128,7 @@ try:
                 "api_endpoint": "https://www.googleapis.com/oauth2/v2/userinfo",
                 "user_id_property": "email",
                 "custom_base_url": 1,
+                "sign_ups": "Allow",
                 "auth_url_data": '{"scope": "openid https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email", "response_type": "code"}'
             })
             doc.insert(ignore_permissions=True)
@@ -142,8 +143,19 @@ try:
             doc.access_token_url = "https://oauth2.googleapis.com/token"
             doc.redirect_url = "https://vyomanta.onrender.com/api/method/frappe.integrations.oauth2_logins.login_via_google"
             doc.api_endpoint = "https://www.googleapis.com/oauth2/v2/userinfo"
+            doc.sign_ups = "Allow"
             doc.save(ignore_permissions=True)
             print("Google Social Login Key updated successfully via Frappe API.")
+            
+        # Ensure default portal role is LMS Student so new registrants get it automatically
+        try:
+            portal_settings = frappe.get_single("Portal Settings")
+            portal_settings.default_role = "LMS Student"
+            portal_settings.save(ignore_permissions=True)
+            print("Set default_role to 'LMS Student' in Portal Settings.")
+        except Exception as portal_err:
+            print(f"Failed to set default portal role: {portal_err}")
+            
     else:
         print("Skipping Google Social Login Key seeding: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET environment variables not set.")
 except Exception as e:
