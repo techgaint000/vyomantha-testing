@@ -575,7 +575,7 @@ export default function CoursePage() {
                       onClick={(e) => handleEnrollFromCard(course.id, e)}
                       style={{
                         background: T.accent,
-                        color: '#000',
+                        color: '#f7f3f3ff',
                         border: 'none',
                         padding: '4px 12px',
                         borderRadius: 6,

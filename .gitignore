@@ -1,0 +1,19 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local scratch files & credentials
+payload.json
+frontend/check_error_count.js
+frontend/check_error_log.js
+frontend/check_tables.js
+frontend/decrypt_test.py
+frontend/fetch_error.js
+frontend/fetch_lms_api.py
+frontend/fetch_oauth.py
+frontend/lms_api_source.py
+frontend/oauth_source.py
+frontend/scratch_test.js
+frontend/seed_google_oauth.js
+frontend/simulate_oauth.py
+docs/
