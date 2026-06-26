@@ -205,7 +205,7 @@ export default function Sidebar({ isCollapsed = false, onToggleCollapse }) {
       flexShrink: 0,
       position: 'relative',
       transition: 'width 0.2s ease',
-      overflow: 'hidden'
+      overflow: 'visible'
     }}>
       {/* Floating Toggle Button */}
       <button
