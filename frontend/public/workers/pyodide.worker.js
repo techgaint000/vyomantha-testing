@@ -57,7 +57,7 @@ import json
 
 def serialize_val(val):
     try:
-        json.dumps(val)
+        json.dumps(val, allow_nan=False)
         return val
     except:
         if isinstance(val, (set, tuple)):

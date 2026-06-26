@@ -65,9 +65,11 @@ export default function Playground({
   };
 
   const onError = (msg) => {
+    setIsTracing(false);
     if (terminalInstanceRef.current) {
       terminalInstanceRef.current.write(`\x1b[31mError: ${msg}\x1b[0m\n`);
     }
+    if (onTraceComplete) onTraceComplete(null);
   };
 
   const onTraceResult = (trace) => {
@@ -467,7 +469,7 @@ export default function Playground({
       {/* Editor & Bottom Panels (Vertical Flex) */}
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: 'calc(100% - 50px)' }}>
         {/* Code Editor Container */}
-        <div style={{ flex: 1.1, overflow: 'auto', background: '#0F172A' }}>
+        <div style={{ overflow: 'auto', background: '#0F172A' }}>
           <CodeMirror
             value={code}
             height="100%"

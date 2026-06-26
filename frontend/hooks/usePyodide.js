@@ -11,6 +11,17 @@ export function usePyodide({ onStdout, onStderr, onReady, onFinish, onError, onT
     callbacksRef.current = { onStdout, onStderr, onReady, onFinish, onError, onTraceResult };
   }, [onStdout, onStderr, onReady, onFinish, onError, onTraceResult]);
 
+  const isReadyRef = useRef(isReady);
+  const isRunningRef = useRef(isRunning);
+
+  useEffect(() => {
+    isReadyRef.current = isReady;
+  }, [isReady]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
   const initWorker = useCallback(() => {
     setIsReady(false);
     setIsRunning(false);
@@ -65,16 +76,16 @@ export function usePyodide({ onStdout, onStderr, onReady, onFinish, onError, onT
   }, [initWorker]);
 
   const runCode = useCallback((code) => {
-    if (!isReady || isRunning || !workerRef.current) return;
+    if (!isReadyRef.current || isRunningRef.current || !workerRef.current) return;
     setIsRunning(true);
     workerRef.current.postMessage({ type: 'RUN', code });
-  }, [isReady, isRunning]);
+  }, []);
 
   const runTrace = useCallback((code) => {
-    if (!isReady || isRunning || !workerRef.current) return;
+    if (!isReadyRef.current || isRunningRef.current || !workerRef.current) return;
     setIsRunning(true);
     workerRef.current.postMessage({ type: 'TRACE', code });
-  }, [isReady, isRunning]);
+  }, []);
 
   const stopCode = useCallback(() => {
     if (workerRef.current) {
