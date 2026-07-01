@@ -21,6 +21,8 @@ export default function Playground({
   const [code, setCode] = useState(initialCode);
   const [activeTab, setActiveTab] = useState('console');
   const [explanation, setExplanation] = useState('');
+  const [isGeneratingExplanation, setIsGeneratingExplanation] = useState(false);
+  const pendingTraceRef = useRef(null);
 
   const handleCodeChange = (newCode) => {
     setCode(newCode);
@@ -137,9 +139,20 @@ export default function Playground({
     onTraceResult
   });
 
+  // Trigger trace runner once console execution is finished
+  useEffect(() => {
+    if (!isRunning && pendingTraceRef.current !== null) {
+      const codeToTrace = pendingTraceRef.current;
+      pendingTraceRef.current = null;
+      setIsTracing(true);
+      runTrace(codeToTrace);
+    }
+  }, [isRunning, runTrace]);
+
   // Handle parent code overrides
   useEffect(() => {
     if (codeOverride !== null) {
+      pendingTraceRef.current = null;
       handleCodeChange(codeOverride);
       setActiveTab('visualizer');
       setIsTracing(true);
@@ -267,6 +280,53 @@ export default function Playground({
     };
   }, []);
 
+  const generateExplanationForCode = async (codeText) => {
+    if (!codeText || !codeText.trim()) return;
+    setIsGeneratingExplanation(true);
+    setExplanation('Generating explanation...');
+    try {
+      const systemPrompt = "You are an expert Python tutor. Explain the following Python code step-by-step. Keep your explanation concise, clear, and focused on how the code executes, data structures, and algorithms used. Do not include greetings. Use markdown.";
+      const finalPrompt = `Please explain this Python code:\n\`\`\`python\n${codeText}\n\`\`\``;
+      
+      let storedUserId = '';
+      if (typeof window !== 'undefined') {
+        storedUserId = localStorage.getItem('lms-user-id') || '';
+      }
+
+      const res = await fetch('/api/gemini/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system: systemPrompt,
+          user: finalPrompt,
+          maxOutputTokens: 1500,
+          userId: storedUserId
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to generate explanation');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+      setExplanation('');
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fullText += decoder.decode(value, { stream: true });
+        setExplanation(fullText);
+      }
+    } catch (e) {
+      console.error(e);
+      setExplanation('⚠️ Failed to generate explanation for this code.');
+    } finally {
+      setIsGeneratingExplanation(false);
+    }
+  };
+
   const handleRun = () => {
     if (!isReady || isRunning) return;
     setActiveTab('console');
@@ -274,24 +334,19 @@ export default function Playground({
       terminalInstanceRef.current.clear();
       terminalInstanceRef.current.writeln('\x1b[90mRunning script...\x1b[0m');
     }
-    runCode(code);
-  };
-
-  const handleRunTrace = () => {
-    if (!isReady || isRunning) return;
-    setActiveTab('visualizer');
+    
+    // Start generating AI explanation in the background
+    generateExplanationForCode(code);
+    
+    // Setup tracing visualizer state to loading
     setIsTracing(true);
     setTraceData(null);
-    runTrace(code);
-  };
+    
+    // Queue trace execution for when runCode finishes
+    pendingTraceRef.current = code;
 
-  const handleStop = () => {
-    if (terminalInstanceRef.current) {
-      terminalInstanceRef.current.writeln('\n\x1b[31mExecution terminated by user.\x1b[0m');
-    }
-    stopCode();
-    setIsTracing(false);
-    setIsPlaying(false);
+    // Execute code in Console
+    runCode(code);
   };
 
   const handleClear = () => {
@@ -428,75 +483,26 @@ export default function Playground({
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={handleRun}
-            disabled={!isReady || isRunning}
+            disabled={!isReady || isRunning || isTracing}
             style={{
-              background: (!isReady || isRunning) ? 'var(--s3)' : 'var(--green)',
+              background: (!isReady || isRunning || isTracing) ? 'var(--s3)' : 'var(--green)',
               color: '#000',
               border: 'none',
               padding: '6px 14px',
               borderRadius: 6,
               fontSize: 12.5,
               fontWeight: 700,
-              cursor: (!isReady || isRunning) ? 'not-allowed' : 'pointer',
+              cursor: (!isReady || isRunning || isTracing) ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: 5,
-              opacity: (!isReady || isRunning) ? 0.6 : 1,
+              opacity: (!isReady || isRunning || isTracing) ? 0.6 : 1,
               transition: 'opacity 0.15s',
               fontFamily: 'inherit'
             }}
           >
             {isRunning && activeTab === 'console' ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={13} fill="#000" />}
             Run
-          </button>
-
-          <button
-            onClick={handleRunTrace}
-            disabled={!isReady || isRunning}
-            style={{
-              background: (!isReady || isRunning) ? 'var(--s3)' : 'var(--amber)',
-              color: '#000',
-              border: 'none',
-              padding: '6px 14px',
-              borderRadius: 6,
-              fontSize: 12.5,
-              fontWeight: 700,
-              cursor: (!isReady || isRunning) ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              opacity: (!isReady || isRunning) ? 0.6 : 1,
-              transition: 'opacity 0.15s',
-              fontFamily: 'inherit'
-            }}
-            title="Visualize Python code execution line-by-line"
-          >
-            {isTracing ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={13} fill="#000" />}
-            Run Trace
-          </button>
-
-          <button
-            onClick={handleStop}
-            disabled={!isRunning && !isTracing}
-            style={{
-              background: (!isRunning && !isTracing) ? 'var(--s3)' : 'var(--red)',
-              color: '#fff',
-              border: 'none',
-              padding: '6px 14px',
-              borderRadius: 6,
-              fontSize: 12.5,
-              fontWeight: 700,
-              cursor: (!isRunning && !isTracing) ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              opacity: (!isRunning && !isTracing) ? 0.6 : 1,
-              transition: 'opacity 0.15s',
-              fontFamily: 'inherit'
-            }}
-          >
-            <Square size={13} fill="#fff" />
-            Stop
           </button>
         </div>
 
@@ -515,8 +521,13 @@ export default function Playground({
               </>
             ) : isTracing ? (
               <>
-                <Loader2 size={13} style={{ animation: 'spin 1s linear' }} />
+                <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
                 <span style={{ color: 'var(--amber)' }}>Generating Trace...</span>
+              </>
+            ) : isGeneratingExplanation ? (
+              <>
+                <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                <span style={{ color: 'var(--green)' }}>Explaining Code...</span>
               </>
             ) : (
               <>
@@ -615,7 +626,11 @@ export default function Playground({
               transition: 'all 0.15s'
             }}
           >
-            <Sparkles size={11} color={traceData ? 'var(--amber)' : 'currentColor'} />
+            {isTracing ? (
+              <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} color="var(--amber)" />
+            ) : (
+              <Sparkles size={11} color={traceData ? 'var(--amber)' : 'currentColor'} />
+            )}
             Visualizer {traceData ? `(${traceData.length} Steps)` : ''}
           </button>
           <button
@@ -639,7 +654,11 @@ export default function Playground({
               transition: 'all 0.15s'
             }}
           >
-            <BookOpen size={11} color={explanation ? 'var(--green)' : 'currentColor'} />
+            {isGeneratingExplanation ? (
+              <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} color="var(--green)" />
+            ) : (
+              <BookOpen size={11} color={explanation ? 'var(--green)' : 'currentColor'} />
+            )}
             Explanation
           </button>
         </div>
@@ -785,12 +804,17 @@ export default function Playground({
             background: 'var(--s1)',
             color: 'var(--text)'
           }}>
-            {!explanation ? (
+            {!explanation && !isGeneratingExplanation ? (
               <div style={{ display: 'flex', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', textAlign: 'center', color: 'var(--muted)', gap: 8 }}>
                 <BookOpen size={24} color="var(--green)" />
                 <span style={{ fontSize: 13, maxWidth: 360 }}>
                   No active explanation loaded. Click <strong>Visualize Code</strong> in the chatbot below to view the explanation here!
                 </span>
+              </div>
+            ) : isGeneratingExplanation && !explanation ? (
+              <div style={{ display: 'flex', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--muted)' }}>
+                <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} color="var(--green)" />
+                <span style={{ fontSize: 13 }}>Generating step-by-step code explanation...</span>
               </div>
             ) : (
               <div className="md-content" style={{ fontSize: 14, lineHeight: 1.7 }}>
