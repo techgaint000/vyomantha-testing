@@ -239,7 +239,9 @@ export async function getEnrolledCourses() {
 /**
  * Fetch all courses (filtered or unfiltered)
  */
-export async function getCourses() {
+export async function getCourses(options = {}) {
+  const forceRefresh = options.forceRefresh || (typeof window !== 'undefined' && window.location.pathname.includes('/admin'));
+
   let locallyDeleted = [];
   if (typeof window !== 'undefined') {
     try {
@@ -249,7 +251,7 @@ export async function getCourses() {
 
   // Check cache first
   const now = Date.now();
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && !forceRefresh) {
     if (!clientCache.courses) {
       try {
         const cachedStr = localStorage.getItem('cached_courses_list');
@@ -262,8 +264,8 @@ export async function getCourses() {
     }
   }
 
-  // If cache is valid (within 15 seconds), return it instantly
-  if (clientCache.courses && (now - clientCache.coursesTimestamp < 15000)) {
+  // If cache is valid (within 15 seconds) and we are not forcing refresh, return it instantly
+  if (!forceRefresh && clientCache.courses && (now - clientCache.coursesTimestamp < 15000)) {
     return clientCache.courses.filter(c => !locallyDeleted.includes(c.id));
   }
 
@@ -398,7 +400,7 @@ export async function getCourses() {
     return list.filter(c => !locallyDeleted.includes(c.id));
   })();
 
-  if (clientCache.courses) {
+  if (!forceRefresh && clientCache.courses) {
     // Run background refresh silently
     fetchPromise.catch(e => console.warn("Background courses refresh failed:", e));
     return clientCache.courses.filter(c => !locallyDeleted.includes(c.id));
@@ -643,7 +645,7 @@ export async function deleteCourse(id) {
  * Fetch course syllabus outline (Chapters & Lessons) from Frappe DocTypes or Local Caches
  */
 export async function getCourseSyllabus(courseId, options = {}) {
-  const forceRefresh = options.forceRefresh || false;
+  const forceRefresh = options.forceRefresh || (typeof window !== 'undefined' && window.location.pathname.includes('/admin'));
   const now = Date.now();
 
   // Check cache first
