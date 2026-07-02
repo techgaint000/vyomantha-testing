@@ -30,8 +30,8 @@ const NAV = [
   { id: '/quizzes',       Icon: Award,         label: 'Quizzes'       },
   { id: '/assignments',   Icon: FileText,      label: 'Assignments'   },
   { id: '/resources',     Icon: FolderOpen,    label: 'Resources'     },
-  { id: '/general-tutor', Icon: Brain,         label: 'General Tutor' },
-  { id: '/coding-tutor',  Icon: Code2,         label: 'Coding Tutor'  },
+  { id: '/general-tutor', Icon: Brain,         label: 'Ask your AI Tutor' },
+  { id: '/coding-tutor',  Icon: Code2,         label: 'Code with AI Tutor'  },
   { id: '/jobs',          Icon: Briefcase,     label: 'Jobs'          },
   { id: '/progress',      Icon: BarChart3,     label: 'Progress'      },
 ];
@@ -440,7 +440,7 @@ export default function GeneralTutor() {
   const tutorNavItems = [
     { href: '/',              Icon: Home,      label: 'Dashboard'     },
     { href: '/courses',       Icon: BookOpen,  label: 'Courses'       },
-    { href: '/coding-tutor',  Icon: Code2,     label: 'Coding Tutor'  },
+    { href: '/coding-tutor',  Icon: Code2,     label: 'Code with AI Tutor'  },
     { href: '/progress',      Icon: BarChart3, label: 'Progress'      },
   ];
 
@@ -551,7 +551,7 @@ export default function GeneralTutor() {
 
   return (
     <>
-      <MobileNav title="General Tutor" accent={T.purple} items={[]} dropdownItems={NAV} extras={tutorExtras} />
+      <MobileNav title="Ask your AI Tutor" accent={T.purple} items={[]} dropdownItems={NAV} extras={tutorExtras} />
       <div style={{ display: 'flex', height: '100vh', background: T.bg, overflow: 'hidden' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -562,7 +562,7 @@ export default function GeneralTutor() {
               <Brain size={isMobile ? 15 : 18} color={T.purple} />
             </div>
             <div>
-              <h2 style={{ color: T.text, fontSize: isMobile ? 15 : 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>General Tutor</h2>
+              <h2 style={{ color: T.text, fontSize: isMobile ? 15 : 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>Ask your AI Tutor</h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.green, flexShrink: 0 }} />
                 <span style={{ fontSize: 11, color: T.muted, fontWeight: 500 }}>AI Tutor</span>
@@ -584,7 +584,7 @@ export default function GeneralTutor() {
               <Brain size={isMobile ? 14 : 16} color={T.purple} />
             </div>
             <div>
-              <div style={{ fontSize: 11, color: T.purple, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>LMS AI TUTOR</div>
+              <div style={{ fontSize: 11, color: T.purple, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>AI TUTOR</div>
               <div style={{ color: T.text, fontSize: 14, lineHeight: 1.7 }}>
                 Hello! I'm your AI learning assistant. Tell me what you'd like to learn and I'll create a personalised explanation. You can also generate quizzes, flashcards, and infographics on demand.
               </div>
@@ -615,7 +615,7 @@ export default function GeneralTutor() {
                     <Brain size={isMobile ? 14 : 16} color={T.purple} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: T.purple, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>LMS AI TUTOR</div>
+                    <div style={{ fontSize: 11, color: T.purple, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>AI TUTOR</div>
                     <div style={{ color: T.text, fontSize: 14, lineHeight: 1.7 }}>
                       <div className="md-content">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanMarkdown(msg.content)}</ReactMarkdown>

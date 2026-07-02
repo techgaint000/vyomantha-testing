@@ -36,8 +36,8 @@ const NAV = [
   { id: '/quizzes',       Icon: Award,         label: 'Quizzes'       },
   { id: '/assignments',   Icon: FileText,      label: 'Assignments'   },
   { id: '/resources',     Icon: FolderOpen,    label: 'Resources'     },
-  { id: '/general-tutor', Icon: Brain,         label: 'General Tutor' },
-  { id: '/coding-tutor',  Icon: Code2,         label: 'Coding Tutor'  },
+  { id: '/general-tutor', Icon: Brain,         label: 'Ask your AI Tutor' },
+  { id: '/coding-tutor',  Icon: Code2,         label: 'Code with AI Tutor'  },
   { id: '/jobs',          Icon: Briefcase,     label: 'Jobs'          },
   { id: '/progress',      Icon: BarChart3,     label: 'Progress'      },
 ];
@@ -824,7 +824,7 @@ export default function CodingTutor() {
   const tutorNavItems = [
     { href: '/',              Icon: Home,      label: 'Dashboard'     },
     { href: '/courses',       Icon: BookOpen,  label: 'Courses'       },
-    { href: '/coding-tutor',  Icon: Code2,     label: 'Coding Tutor'  },
+    { href: '/coding-tutor',  Icon: Code2,     label: 'Code with AI Tutor'  },
     { href: '/progress',      Icon: BarChart3, label: 'Progress'      },
   ];
 
@@ -952,7 +952,7 @@ export default function CodingTutor() {
 
   return (
     <>
-      <MobileNav title="Coding Tutor" accent={T.amber} items={[]} dropdownItems={NAV} extras={tutorExtras} />
+      <MobileNav title="Code with AI Tutor" accent={T.amber} items={[]} dropdownItems={NAV} extras={tutorExtras} />
       <div style={{ display: 'flex', height: '100vh', background: T.bg, overflow: 'hidden' }}>
         <div id="tutor-workspace-container" style={{ flex: 1, display: 'flex', flexDirection: showVerticalSplit ? 'column' : 'row', overflow: 'hidden' }}>
           
@@ -974,7 +974,7 @@ export default function CodingTutor() {
                   <Code2 size={isMobile ? 15 : 18} color={T.amber} />
                 </div>
                 <div>
-                  <h2 style={{ color: T.text, fontSize: isMobile ? 15 : 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>Coding Tutor</h2>
+                  <h2 style={{ color: T.text, fontSize: isMobile ? 15 : 18, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>Code with AI Tutor</h2>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.green, flexShrink: 0 }} />
                     <span style={{ fontSize: 11, color: T.muted, fontWeight: 500 }}>Programming AI Agent</span>
@@ -1021,7 +1021,7 @@ export default function CodingTutor() {
                   <Code2 size={isMobile ? 14 : 16} color={T.amber} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, color: T.amber, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>CODING TUTOR</div>
+                  <div style={{ fontSize: 11, color: T.amber, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>CODE WITH AI TUTOR</div>
                   <div style={{ color: T.text, fontSize: 14, lineHeight: 1.7 }}>
                     Hello! I'm your Vyomanta programming assistant, restricted strictly to coding and software engineering topics. Ask me any coding questions, or request programming quizzes, flashcards, and examples.
                   </div>
@@ -1062,7 +1062,7 @@ export default function CodingTutor() {
                           <Code2 size={isMobile ? 14 : 16} color={T.amber} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 11, color: T.amber, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>CODING TUTOR</div>
+                          <div style={{ fontSize: 11, color: T.amber, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>CODE WITH AI TUTOR</div>
                           
                           {/* Visual Analytics Card */}
                           {parseAnalyticsFromMessage(msg) && renderAnalyticsCard(parseAnalyticsFromMessage(msg))}
@@ -1294,7 +1294,7 @@ export default function CodingTutor() {
                     <Code2 size={isMobile ? 14 : 16} color={T.amber} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: T.amber, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>CODING TUTOR</div>
+                    <div style={{ fontSize: 11, color: T.amber, fontWeight: 700, letterSpacing: '0.05em', marginBottom: 4 }}>CODE WITH AI TUTOR</div>
                     <div ref={streamElRef} style={{ color: T.text, fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
                     <Loader2 size={12} color={T.accent} style={{ animation: 'spin 1s linear infinite', marginTop: 6 }} />
                   </div>

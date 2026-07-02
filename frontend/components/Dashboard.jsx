@@ -38,7 +38,7 @@ export default function Dashboard() {
   // Daily Tasks state
   const [tasks, setTasks] = useState([
     { id: 'resume', label: 'Resume active syllabus', completed: false },
-    { id: 'tutor', label: 'Ask a question in General Tutor', completed: false },
+    { id: 'tutor', label: 'Ask a question in AI Tutor', completed: false },
     { id: 'daily_concept', label: 'Review Daily Concept Card', completed: false },
     { id: 'skill_check', label: 'Complete Daily Skill Check', completed: false }
   ]);
@@ -564,7 +564,7 @@ export default function Dashboard() {
                 <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   <Brain size={14} /> AI Assistant Hub
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>General Tutor</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Ask your AI Tutor</div>
                 <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 12 }}>
                   Ask questions, generate flashcards, and study customized visual outlines.
                 </div>
@@ -605,7 +605,7 @@ export default function Dashboard() {
                 <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   <Flame size={14} /> Practice Sandbox
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Coding Tutor</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Code with AI Tutor</div>
                 <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 12 }}>
                   Write, test, and debug Python code samples directly with an AI helper.
                 </div>

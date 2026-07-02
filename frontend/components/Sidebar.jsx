@@ -16,8 +16,8 @@ const NAV = [
   { id: '/quizzes',       Icon: Award,         label: 'Quizzes'       },
   { id: '/assignments',   Icon: FileText,      label: 'Assignments'   },
   { id: '/resources',     Icon: FolderOpen,    label: 'Resources'     },
-  { id: '/general-tutor', Icon: Brain,         label: 'General Tutor' },
-  { id: '/coding-tutor',  Icon: Code2,         label: 'Coding Tutor'  },
+  { id: '/general-tutor', Icon: Brain,         label: 'Ask your AI Tutor' },
+  { id: '/coding-tutor',  Icon: Code2,         label: 'Code with AI Tutor'  },
   { id: '/jobs',          Icon: Briefcase,     label: 'Jobs'          },
   { id: '/progress',      Icon: BarChart3,     label: 'Progress'      },
 ];
@@ -171,7 +171,7 @@ export default function Sidebar({ isCollapsed = false, onToggleCollapse }) {
   if (isMobile) {
     return (
       <MobileNav
-        title="LMS AI"
+        title="AI TUTOR"
         accent={T.accent}
         items={[
           ...NAV.map(({ id, Icon, label }) => ({
@@ -244,7 +244,7 @@ export default function Sidebar({ isCollapsed = false, onToggleCollapse }) {
             </div>
             {!isCollapsed && (
               <div>
-                <div style={{ color: T.text, fontWeight: 700, fontSize: 15, letterSpacing: '-0.02em' }}>LMS AI</div>
+                <div style={{ color: T.text, fontWeight: 700, fontSize: 15, letterSpacing: '-0.02em' }}>AI TUTOR</div>
                 <div style={{ color: T.muted, fontSize: 11 }}>Learning Platform</div>
               </div>
             )}
@@ -333,7 +333,7 @@ export default function Sidebar({ isCollapsed = false, onToggleCollapse }) {
                   transition: 'all 0.2s',
                   flexShrink: 0,
                 }}
-                title={`Expand for ${isGeneralTutor ? 'General Tutor' : 'Coding Tutor'}`}
+                title={`Expand for ${isGeneralTutor ? 'Ask your AI Tutor' : 'Code With AI Tutor'}`}
               >
                 {isGeneralTutor ? <Brain size={16} /> : <Code2 size={16} />}
               </button>
@@ -362,7 +362,7 @@ export default function Sidebar({ isCollapsed = false, onToggleCollapse }) {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                   {isGeneralTutor ? <Brain size={16} /> : <Code2 size={16} />}
-                  <span>{isGeneralTutor ? 'General Tutor' : 'Coding Tutor'}</span>
+                  <span>{isGeneralTutor ? 'Ask your AI Tutor' : 'Code with AI Tutor'}</span>
                 </div>
                 <ChevronDown
                   size={14}

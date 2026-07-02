@@ -333,8 +333,8 @@ export default function VoiceAgentView({ onClose, initialSession }) {
   const voiceNavItems = [
     { href: '/',              Icon: Home,      label: 'Dashboard'     },
     { href: '/courses',       Icon: BookOpen,  label: 'Courses'       },
-    { href: '/general-tutor', Icon: Brain,     label: 'General Tutor' },
-    { href: '/coding-tutor',  Icon: Code2,     label: 'Coding Tutor'  },
+    { href: '/general-tutor', Icon: Brain,     label: 'Ask your AI Tutor' },
+    { href: '/coding-tutor',  Icon: Code2,     label: 'Code with AI Tutor'  },
     { href: '/progress',      Icon: BarChart3, label: 'Progress'      },
   ];
 
