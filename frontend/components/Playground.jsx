@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { python } from '@codemirror/lang-python';
 import { usePyodide } from '@/hooks/usePyodide';
-import { Play, Square, Trash2, CheckCircle, Loader2, Sparkles, ChevronLeft, ChevronRight, Pause, BookOpen } from 'lucide-react';
+import { Play, Square, Trash2, CheckCircle, Loader2, Sparkles, ChevronLeft, ChevronRight, Pause, BookOpen, AlertCircle, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -34,6 +35,8 @@ export default function Playground({
   const pendingTraceRef = useRef(null);
   const [assertionResults, setAssertionResults] = useState([]);
   const [verifyState, setVerifyState] = useState('idle'); // 'idle' | 'verifying' | 'success' | 'failed'
+  const [traceError, setTraceError] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     if (codingExercise?.hasExercise && codingExercise.starterCode) {
@@ -43,6 +46,7 @@ export default function Playground({
     }
     setVerifyState('idle');
     setAssertionResults([]);
+    setTraceError(null);
   }, [codingExercise, initialCode]);
 
   const handleCodeChange = (newCode) => {
@@ -105,9 +109,13 @@ export default function Playground({
   };
 
   useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
     return () => {
       document.removeEventListener('mousemove', handlePanelMouseMove);
       document.removeEventListener('mouseup', handlePanelMouseUp);
+      window.removeEventListener('resize', checkMobile);
     };
   }, []);
 
@@ -173,7 +181,33 @@ export default function Playground({
     if (onTraceComplete) onTraceComplete(null);
   };
 
+  const validateTraceData = (trace) => {
+    if (!trace || !Array.isArray(trace)) {
+      return { valid: false, reason: "No execution trace was generated." };
+    }
+    if (trace.length > 500) {
+      return { valid: false, reason: "Execution trace exceeds safety limits (> 500 steps). Infinite loop or heavy recursion detected." };
+    }
+    const lastStep = trace[trace.length - 1];
+    if (lastStep && lastStep.error) {
+      if (lastStep.error.includes("Trace limit exceeded")) {
+        return { valid: false, reason: "Infinite loop safety limit exceeded. Pyodide execution tracing stopped to avoid freezing the browser." };
+      }
+    }
+    return { valid: true };
+  };
+
   const onTraceResult = (trace) => {
+    const check = validateTraceData(trace);
+    if (!check.valid) {
+      setTraceError(check.reason);
+      setTraceData(null);
+      setIsTracing(false);
+      if (onTraceComplete) onTraceComplete(null);
+      return;
+    }
+
+    setTraceError(null);
     setTraceData(trace);
     setCurrentStep(0);
     setIsTracing(false);
@@ -195,6 +229,7 @@ export default function Playground({
       const codeToTrace = pendingTraceRef.current;
       pendingTraceRef.current = null;
       setIsTracing(true);
+      setTraceError(null);
       runTrace(codeToTrace);
     }
   }, [isRunning, runTrace]);
@@ -207,6 +242,7 @@ export default function Playground({
       setActiveTab('visualizer');
       setIsTracing(true);
       setTraceData(null);
+      setTraceError(null);
       // Wait for Pyodide worker to be ready to trace
       const timer = setTimeout(() => {
         runTrace(codeOverride);
@@ -393,6 +429,7 @@ export default function Playground({
     // Setup tracing visualizer state to loading
     setIsTracing(true);
     setTraceData(null);
+    setTraceError(null);
     
     // Queue trace execution for when runCode finishes
     pendingTraceRef.current = code;
@@ -459,66 +496,111 @@ except Exception as e:
       );
     }
 
+    const prevStep = currentStep > 0 ? traceData[currentStep - 1] : null;
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {keys.map((key) => {
           const val = variables[key];
           const isArray = Array.isArray(val);
           const isDict = typeof val === 'object' && val !== null && !isArray;
+          const prevVal = prevStep ? prevStep.variables?.[key] : undefined;
+          const isChanged = prevVal !== undefined && JSON.stringify(prevVal) !== JSON.stringify(val);
+
+          const borderStyle = isChanged ? '1px solid rgba(245, 169, 91, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)';
+          const shadowStyle = isChanged ? '0 0 12px rgba(245, 169, 91, 0.15)' : 'none';
 
           if (isArray) {
             return (
-              <div key={key} className="variable-card" style={{ background: '#0D111A', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 8, padding: 12 }}>
-                <div style={{ fontSize: 11, color: '#8892B0', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>{key} (List)</div>
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {val.map((item, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        minWidth: 32,
-                        height: 32,
-                        padding: '0 6px',
-                        borderRadius: 6,
-                        background: '#161B26',
-                        border: `1px solid rgba(91, 140, 248, 0.25)`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 12.5,
-                        fontWeight: 700,
-                        color: '#5B8CF8'
-                      }}
-                    >
-                      {String(item)}
-                    </div>
-                  ))}
+              <motion.div
+                key={key}
+                layout
+                animate={{ scale: isChanged ? [1, 1.03, 1] : 1 }}
+                transition={{ duration: 0.3 }}
+                className="variable-card"
+                style={{ background: '#0D111A', border: borderStyle, boxShadow: shadowStyle, borderRadius: 8, padding: 12 }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, color: '#8892B0', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{key} (List)</div>
+                  {isChanged && <span style={{ fontSize: 9, color: '#F5A95B', background: 'rgba(245, 169, 91, 0.12)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>Modified</span>}
                 </div>
-              </div>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {val.map((item, idx) => {
+                    const prevItem = Array.isArray(prevVal) ? prevVal[idx] : undefined;
+                    const isItemChanged = prevItem !== undefined && prevItem !== item;
+                    return (
+                      <motion.div
+                        key={idx}
+                        animate={{ scale: isItemChanged ? [1, 1.15, 1] : 1 }}
+                        transition={{ duration: 0.3 }}
+                        style={{
+                          minWidth: 32,
+                          height: 32,
+                          padding: '0 6px',
+                          borderRadius: 6,
+                          background: '#161B26',
+                          border: isItemChanged ? `1px solid rgba(245, 169, 91, 0.6)` : `1px solid rgba(91, 140, 248, 0.25)`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          color: isItemChanged ? '#F5A95B' : '#5B8CF8'
+                        }}
+                      >
+                        {String(item)}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </motion.div>
             );
           }
 
           if (isDict) {
             return (
-              <div key={key} className="variable-card" style={{ background: '#0D111A', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 8, padding: 12 }}>
-                <div style={{ fontSize: 11, color: '#8892B0', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>{key} (Dict)</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {Object.entries(val).map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: `1px solid rgba(255, 255, 255, 0.05)`, padding: '3px 0' }}>
-                      <span style={{ color: '#8892B0', fontFamily: 'monospace' }}>{k}</span>
-                      <span style={{ fontWeight: 600, color: '#DDE3F2', fontFamily: 'monospace' }}>{String(v)}</span>
-                    </div>
-                  ))}
+              <motion.div
+                key={key}
+                layout
+                animate={{ scale: isChanged ? [1, 1.03, 1] : 1 }}
+                transition={{ duration: 0.3 }}
+                className="variable-card"
+                style={{ background: '#0D111A', border: borderStyle, boxShadow: shadowStyle, borderRadius: 8, padding: 12 }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, color: '#8892B0', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{key} (Dict)</div>
+                  {isChanged && <span style={{ fontSize: 9, color: '#F5A95B', background: 'rgba(245, 169, 91, 0.12)', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>Modified</span>}
                 </div>
-              </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {Object.entries(val).map(([k, v]) => {
+                    const prevSubVal = prevVal && typeof prevVal === 'object' ? prevVal[k] : undefined;
+                    const isSubValChanged = prevSubVal !== undefined && prevSubVal !== v;
+                    return (
+                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: `1px solid rgba(255, 255, 255, 0.05)`, padding: '3px 0' }}>
+                        <span style={{ color: '#8892B0', fontFamily: 'monospace' }}>{k}</span>
+                        <motion.span
+                          animate={{ color: isSubValChanged ? '#F5A95B' : '#DDE3F2' }}
+                          style={{ fontWeight: 600, fontFamily: 'monospace' }}
+                        >
+                          {String(v)}
+                        </motion.span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
             );
           }
 
           const valType = typeof val;
-          const valColor = valType === 'boolean' ? '#22C5A0' : (valType === 'number' ? '#5B8CF8' : '#F5A95B');
+          const valColor = isChanged ? '#F5A95B' : (valType === 'boolean' ? '#22C5A0' : (valType === 'number' ? '#5B8CF8' : '#F5A95B'));
 
           return (
-            <div
+            <motion.div
               key={key}
+              layout
+              animate={{ scale: isChanged ? [1, 1.05, 1] : 1 }}
+              transition={{ duration: 0.3 }}
               className="variable-card"
               style={{
                 display: 'flex',
@@ -526,13 +608,17 @@ except Exception as e:
                 justifyContent: 'space-between',
                 padding: '8px 12px',
                 background: '#0D111A',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
+                border: borderStyle,
+                boxShadow: shadowStyle,
                 borderRadius: 8
               }}
             >
-              <span style={{ fontWeight: 600, color: '#8892B0', fontSize: 12.5, fontFamily: 'monospace' }}>{key}</span>
+              <span style={{ fontWeight: 600, color: '#8892B0', fontSize: 12.5, fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
+                {key}
+                {isChanged && <span style={{ fontSize: 8, color: '#F5A95B', background: 'rgba(245, 169, 91, 0.12)', padding: '1px 4px', borderRadius: 3, fontWeight: 700, marginLeft: 6 }}>Modified</span>}
+              </span>
               <span style={{ fontSize: 12.5, color: valColor, fontWeight: 700, fontFamily: 'monospace' }}>{String(val)}</span>
-            </div>
+            </motion.div>
           );
         })}
       </div>
@@ -892,7 +978,16 @@ except Exception as e:
                   height: '100%',
                   overflow: 'hidden'
                 }}>
-                  {/* 1. If Loading or empty trace */}
+                  {traceError && (
+                    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', textAlign: 'center', gap: 12 }}>
+                      <div style={{ fontSize: 32 }}>⚠️</div>
+                      <h3 style={{ color: '#F8FAFC', fontSize: 16, fontWeight: 700, margin: 0 }}>Visualizer Blocked</h3>
+                      <p style={{ color: '#8892B0', fontSize: 13, maxWidth: 360, margin: 0, lineHeight: 1.6 }}>
+                        {traceError}
+                      </p>
+                    </div>
+                  )}
+
                   {isTracing && (
                     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#8892B0' }}>
                       <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
@@ -900,7 +995,7 @@ except Exception as e:
                     </div>
                   )}
 
-                  {!isTracing && !traceData && (
+                  {!isTracing && !traceData && !traceError && (
                     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', textAlign: 'center', color: '#8892B0', gap: 8 }}>
                       <Sparkles size={24} color="#F5A95B" />
                       <span style={{ fontSize: 13, maxWidth: 360 }}>

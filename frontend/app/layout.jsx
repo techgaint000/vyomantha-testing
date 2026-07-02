@@ -9,7 +9,7 @@ const outfit = Outfit({
 });
 
 export const metadata = {
-  title: 'LMS AI - Learning Platform',
+  title: 'AI TUTOR - Learning Platform',
   description: 'AI-powered learning workspace with courses, tutors, quizzes and flashcards',
 };
 

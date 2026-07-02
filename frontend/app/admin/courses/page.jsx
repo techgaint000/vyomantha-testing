@@ -21,7 +21,7 @@ export default function AdminCoursesPage() {
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' or 'edit'
-  const [currentCourse, setCurrentCourse] = useState({ id: '', title: '', instructor: '', category: 'Web Development', enrolled: 0, status: 'Draft', date: '' });
+  const [currentCourse, setCurrentCourse] = useState({ id: '', title: '', instructor: '', category: 'Web Development', enrolled: 0, status: 'Draft', date: '', description: '', image: '', pdf: '' });
 
   // CSV Import State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -175,31 +175,54 @@ export default function AdminCoursesPage() {
     setModalMode('create');
     const today = new Date();
     const formattedDate = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    setCurrentCourse({ id: '', title: '', instructor: 'Administrator', category: 'Web Development', enrolled: 0, status: 'Draft', date: formattedDate });
+    setCurrentCourse({ id: '', title: '', instructor: 'Administrator', category: 'Web Development', enrolled: 0, status: 'Draft', date: formattedDate, description: '', image: '', pdf: '' });
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (course) => {
     setModalMode('edit');
-    setCurrentCourse({ ...course });
+    setCurrentCourse({
+      id: course.id,
+      title: course.title,
+      instructor: course.instructor,
+      category: course.category,
+      enrolled: course.enrolled,
+      status: course.status,
+      date: course.date,
+      description: course.description || '',
+      image: course.image || '',
+      pdf: course.pdf || ''
+    });
     setIsModalOpen(true);
   };
 
   const handleDeleteCourse = async (id) => {
-    if (confirm('Are you sure you want to delete this course?')) {
-      try {
-        const success = await deleteCourse(id);
-        if (success) {
-          const fresh = await getCourses();
-          setCourses(fresh);
-          updateChecklist(fresh);
-        } else {
-          alert('Failed to delete course.');
-        }
-      } catch (e) {
-        alert('Failed to delete course from database: ' + e.message);
+    // 1. Immediately remove from local state
+    setCourses(prev => prev.filter(c => c.id !== id));
+
+    // 2. Write to local storage deleted cache to hide on student side instantly
+    try {
+      const locallyDeleted = JSON.parse(localStorage.getItem('locally_deleted_courses') || '[]');
+      if (!locallyDeleted.includes(id)) {
+        locallyDeleted.push(id);
+        localStorage.setItem('locally_deleted_courses', JSON.stringify(locallyDeleted));
       }
+    } catch (e) {
+      console.error('Failed to update locally_deleted_courses:', e);
     }
+
+    // 3. Delete in background
+    deleteCourse(id).then(success => {
+      if (success) {
+        getCourses().then(fresh => {
+          updateChecklist(fresh);
+        });
+      } else {
+        console.error('Failed to delete course from DB in background');
+      }
+    }).catch(e => {
+      console.error('Error during background course deletion:', e);
+    });
   };
 
   const handleSaveCourseSubmit = async (e) => {
@@ -765,6 +788,70 @@ export default function AdminCoursesPage() {
                     <option value="Published">Published</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Course Description */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Course Description</label>
+                <textarea
+                  placeholder="Detailed course curriculum explanation..."
+                  value={currentCourse.description}
+                  onChange={(e) => setCurrentCourse({ ...currentCourse, description: e.target.value })}
+                  rows={3}
+                  style={{
+                    background: T.s2,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 8,
+                    padding: '9px 12px',
+                    color: T.text,
+                    fontSize: 13,
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              {/* Course Image URL */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Course Image URL (optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. https://images.unsplash.com/photo-..."
+                  value={currentCourse.image}
+                  onChange={(e) => setCurrentCourse({ ...currentCourse, image: e.target.value })}
+                  style={{
+                    background: T.s2,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 8,
+                    padding: '9px 12px',
+                    color: T.text,
+                    fontSize: 13,
+                    outline: 'none',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              {/* Course Materials PDF URL */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Course Materials PDF URL (optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. https://drive.google.com/file/d/..."
+                  value={currentCourse.pdf}
+                  onChange={(e) => setCurrentCourse({ ...currentCourse, pdf: e.target.value })}
+                  style={{
+                    background: T.s2,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 8,
+                    padding: '9px 12px',
+                    color: T.text,
+                    fontSize: 13,
+                    outline: 'none',
+                    fontFamily: 'inherit'
+                  }}
+                />
               </div>
 
               {/* Action Buttons */}

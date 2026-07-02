@@ -54,20 +54,36 @@ self.onmessage = async function (event) {
       const traceRunner = `
 import sys
 import json
+import math
 
-def serialize_val(val):
+def serialize_val(val, visited=None):
+    if visited is None:
+        visited = set()
+    val_id = id(val)
+    if val_id in visited:
+        return "<circular reference>"
+    if isinstance(val, float):
+        if math.isnan(val):
+            return "NaN"
+        elif math.isinf(val):
+            return "Infinity" if val > 0 else "-Infinity"
+        return val
     try:
         json.dumps(val, allow_nan=False)
         return val
     except:
-        if isinstance(val, (set, tuple)):
-            return [serialize_val(x) for x in val]
-        elif isinstance(val, list):
-            return [serialize_val(x) for x in val]
-        elif isinstance(val, dict):
-            return {str(k): serialize_val(v) for k, v in val.items()}
-        else:
-            return str(val)
+        visited.add(val_id)
+        try:
+            if isinstance(val, (set, tuple)):
+                return [serialize_val(x, visited) for x in val]
+            elif isinstance(val, list):
+                return [serialize_val(x, visited) for x in val]
+            elif isinstance(val, dict):
+                return {str(k): serialize_val(v, visited) for k, v in val.items()}
+            else:
+                return str(val)
+        finally:
+            visited.remove(val_id)
 
 def trace_code(code_string):
     trace_data = []

@@ -17,7 +17,6 @@ const NAV_ITEMS = [
   { id: '/admin/search',      Icon: Search,       label: 'Search' },
   { id: '/admin/alerts',      Icon: Bell,         label: 'Notifications' },
   { id: '/admin/courses',     Icon: BookOpen,     label: 'Courses' },
-  { id: '/admin/programs',    Icon: Layers,       label: 'Programs', disabled: true },
   { id: '/admin/batches',     Icon: Users,        label: 'Batches' },
   { id: '/admin/certs',       Icon: Award,        label: 'Certifications' },
   { id: '/admin/jobs',        Icon: Briefcase,    label: 'Jobs' },

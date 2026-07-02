@@ -9,6 +9,7 @@ import {
 import { T } from '@/lib/lms-data';
 import { getCourses, getCourseSyllabus, saveCourseSyllabus } from '@/lib/frappe';
 import { useMediaQuery, isMobileMQ } from '@/lib/useMediaQuery';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function CourseOutlinePage() {
   const params = useParams();
@@ -24,9 +25,10 @@ export default function CourseOutlinePage() {
 
   // Expanded chapters state
   const [expandedChapters, setExpandedChapters] = useState({});
+  const [toastMsg, setToastMsg] = useState('');
 
   // Modals / Editors state
-  const [chapterModal, setChapterModal] = useState({ open: false, mode: 'create', chapterId: '', title: '' });
+  const [chapterModal, setChapterModal] = useState({ open: false, mode: 'create', chapterId: '', title: '', description: '', emoji: '📖', accent: '#5B8CF8' });
   const [activeLessonTab, setActiveLessonTab] = useState('basic');
   const [lessonModal, setLessonModal] = useState({
     open: false,
@@ -44,7 +46,8 @@ export default function CourseOutlinePage() {
     exerciseInstruction: '',
     exerciseStarterCode: '# Write your code here\n',
     exerciseSolutionCode: '',
-    exerciseTestCases: ''
+    exerciseTestCases: '',
+    pdf: ''
   });
 
   // Current editing quiz question modal/form
@@ -89,7 +92,8 @@ export default function CourseOutlinePage() {
     try {
       const saved = await saveCourseSyllabus(id, updatedSyllabus || syllabus);
       setSyllabus(saved);
-      alert('Syllabus outline successfully synchronized.');
+      setToastMsg('Syllabus outline successfully synchronized.');
+      setTimeout(() => setToastMsg(''), 3000);
     } catch (e) {
       alert('Failed to save syllabus: ' + e.message);
     } finally {
@@ -100,11 +104,19 @@ export default function CourseOutlinePage() {
   // --- Chapter Operations ---
 
   const openAddChapter = () => {
-    setChapterModal({ open: true, mode: 'create', chapterId: '', title: '' });
+    setChapterModal({ open: true, mode: 'create', chapterId: '', title: '', description: '', emoji: '📖', accent: '#5B8CF8' });
   };
 
   const openEditChapter = (m) => {
-    setChapterModal({ open: true, mode: 'edit', chapterId: m.id, title: m.title });
+    setChapterModal({
+      open: true,
+      mode: 'edit',
+      chapterId: m.id,
+      title: m.title,
+      description: m.description || '',
+      emoji: m.emoji || '📖',
+      accent: m.accent || '#5B8CF8'
+    });
   };
 
   const handleDeleteChapter = (chapterId) => {
@@ -128,22 +140,29 @@ export default function CourseOutlinePage() {
       const newChapter = {
         id: `ch_${Date.now()}`,
         title: chapterModal.title,
-        emoji: '📖',
-        accent: T.accent,
+        description: chapterModal.description || '',
+        emoji: chapterModal.emoji || '📖',
+        accent: chapterModal.accent || '#5B8CF8',
         lessons: []
       };
       updatedModules.push(newChapter);
       setExpandedChapters(prev => ({ ...prev, [newChapter.id]: true }));
     } else {
       updatedModules = updatedModules.map(m =>
-        m.id === chapterModal.chapterId ? { ...m, title: chapterModal.title } : m
+        m.id === chapterModal.chapterId ? {
+          ...m,
+          title: chapterModal.title,
+          description: chapterModal.description || '',
+          emoji: chapterModal.emoji || '📖',
+          accent: chapterModal.accent || '#5B8CF8'
+        } : m
       );
     }
 
     const updated = { ...syllabus, modules: updatedModules };
     setSyllabus(updated);
     handleSaveSyllabus(updated);
-    setChapterModal({ open: false, mode: 'create', chapterId: '', title: '' });
+    setChapterModal({ open: false, mode: 'create', chapterId: '', title: '', description: '', emoji: '📖', accent: '#5B8CF8' });
   };
 
   // --- Lesson Operations ---
@@ -166,7 +185,8 @@ export default function CourseOutlinePage() {
       exerciseInstruction: '',
       exerciseStarterCode: '# Write your code here\n',
       exerciseSolutionCode: '',
-      exerciseTestCases: ''
+      exerciseTestCases: '',
+      pdf: ''
     });
   };
 
@@ -198,7 +218,8 @@ export default function CourseOutlinePage() {
       exerciseInstruction: coding.instruction || '',
       exerciseStarterCode: coding.starterCode || '',
       exerciseSolutionCode: coding.solutionCode || '',
-      exerciseTestCases: testCasesStr
+      exerciseTestCases: testCasesStr,
+      pdf: lesson.pdf || ''
     });
   };
 
@@ -256,7 +277,8 @@ export default function CourseOutlinePage() {
             overview: lessonModal.overview,
             pts: points.length > 0 ? points : ['Key concept introduction.'],
             quizQuestions: lessonModal.quizQuestions,
-            codingExercise: codingObj
+            codingExercise: codingObj,
+            pdf: lessonModal.pdf || ''
           };
           updatedLessons.push(newLesson);
         } else {
@@ -270,7 +292,8 @@ export default function CourseOutlinePage() {
                   overview: lessonModal.overview,
                   pts: points,
                   quizQuestions: lessonModal.quizQuestions,
-                  codingExercise: codingObj
+                  codingExercise: codingObj,
+                  pdf: lessonModal.pdf || ''
                 }
               : l
           );
@@ -300,7 +323,8 @@ export default function CourseOutlinePage() {
       exerciseInstruction: '',
       exerciseStarterCode: '# Write your code here\n',
       exerciseSolutionCode: '',
-      exerciseTestCases: ''
+      exerciseTestCases: '',
+      pdf: ''
     });
   };
 
@@ -481,60 +505,76 @@ export default function CourseOutlinePage() {
                     </div>
 
                     {/* Lessons list */}
-                    {expanded && (
-                      <div style={{ padding: '4px 0' }}>
-                        {chapter.lessons.length === 0 ? (
-                          <div style={{ padding: '20px 24px', color: T.muted, fontSize: 12.5, textAlign: 'center' }}>
-                            No lessons in this chapter. Click "Add Lesson" to populate content.
-                          </div>
-                        ) : (
-                          chapter.lessons.map((lesson, lIdx) => (
-                            <div
-                              key={lesson.id}
-                              style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: '12px 24px', borderBottom: lIdx < chapter.lessons.length - 1 ? `1px solid ${T.border}` : 'none'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.accent }} />
-                                <div>
-                                  <h4 style={{ color: T.text, fontSize: 13.5, fontWeight: 500, margin: 0 }}>{lesson.title}</h4>
-                                  <div style={{ display: 'flex', gap: 8, marginTop: 2, fontSize: 11, color: T.muted }}>
-                                    <span>⏱️ {lesson.dur}</span>
-                                    <span>•</span>
-                                    <span>📺 Video: {lesson.vid || 'None'}</span>
-                                    {lesson.quizQuestions?.length > 0 && (
-                                      <>
+                    <AnimatePresence initial={false}>
+                      {expanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2, ease: 'easeInOut' }}
+                          style={{ overflow: 'hidden' }}
+                        >
+                          <div style={{ padding: '4px 0' }}>
+                            {chapter.lessons.length === 0 ? (
+                              <div style={{ padding: '20px 24px', color: T.muted, fontSize: 12.5, textAlign: 'center' }}>
+                                No lessons in this chapter. Click "Add Lesson" to populate content.
+                              </div>
+                            ) : (
+                              chapter.lessons.map((lesson, lIdx) => (
+                                <div
+                                  key={lesson.id}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: '12px 24px', borderBottom: lIdx < chapter.lessons.length - 1 ? `1px solid ${T.border}` : 'none'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.accent }} />
+                                    <div>
+                                      <h4 style={{ color: T.text, fontSize: 13.5, fontWeight: 500, margin: 0 }}>{lesson.title}</h4>
+                                      <div style={{ display: 'flex', gap: 8, marginTop: 2, fontSize: 11, color: T.muted }}>
+                                        <span>⏱️ {lesson.dur}</span>
                                         <span>•</span>
-                                        <span style={{ color: T.green, fontWeight: 600 }}>📝 {lesson.quizQuestions.length} Quiz Questions</span>
-                                      </>
-                                    )}
+                                        <span>📺 Video: {lesson.vid || 'None'}</span>
+                                        {lesson.pdf && (
+                                          <>
+                                            <span>•</span>
+                                            <span style={{ color: T.accent, fontWeight: 600 }}>📄 PDF Attached</span>
+                                          </>
+                                        )}
+                                        {lesson.quizQuestions?.length > 0 && (
+                                          <>
+                                            <span>•</span>
+                                            <span style={{ color: T.green, fontWeight: 600 }}>📝 {lesson.quizQuestions.length} Quiz Questions</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button
+                                      onClick={() => openEditLesson(chapter.id, lesson)}
+                                      style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', padding: 4 }}
+                                      title="Edit Lesson Outline & Quizzes"
+                                    >
+                                      <Edit2 size={13} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteLesson(chapter.id, lesson.id)}
+                                      style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', padding: 4 }}
+                                      title="Delete Lesson"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
                                   </div>
                                 </div>
-                              </div>
-
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <button
-                                  onClick={() => openEditLesson(chapter.id, lesson)}
-                                  style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', padding: 4 }}
-                                  title="Edit Lesson Outline & Quizzes"
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteLesson(chapter.id, lesson.id)}
-                                  style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', padding: 4 }}
-                                  title="Delete Lesson"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
+                              ))
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 );
               })}
@@ -581,6 +621,51 @@ export default function CourseOutlinePage() {
                 style={{
                   width: '100%', background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8,
                   padding: '10px 12px', color: T.text, fontSize: 13, fontFamily: 'inherit', outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* Chapter Emoji & Accent Color Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <label style={{ color: T.text, fontSize: 12, fontWeight: 500 }}>Chapter Emoji</label>
+                <input
+                  type="text"
+                  value={chapterModal.emoji || ''}
+                  onChange={(e) => setChapterModal(prev => ({ ...prev, emoji: e.target.value }))}
+                  placeholder="e.g. 📖, 🐍, 💻"
+                  style={{
+                    width: '100%', background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8,
+                    padding: '8px 12px', color: T.text, fontSize: 13, outline: 'none'
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <label style={{ color: T.text, fontSize: 12, fontWeight: 500 }}>Accent Color (HEX)</label>
+                <input
+                  type="text"
+                  value={chapterModal.accent || ''}
+                  onChange={(e) => setChapterModal(prev => ({ ...prev, accent: e.target.value }))}
+                  placeholder="e.g. #9B6EF8"
+                  style={{
+                    width: '100%', background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8,
+                    padding: '8px 12px', color: T.text, fontSize: 13, outline: 'none'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Chapter Description */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
+              <label style={{ color: T.text, fontSize: 12.5, fontWeight: 500 }}>Description</label>
+              <textarea
+                value={chapterModal.description || ''}
+                onChange={(e) => setChapterModal(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Brief introduction for this chapter..."
+                rows="2"
+                style={{
+                  width: '100%', background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8,
+                  padding: '10px 12px', color: T.text, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical'
                 }}
               />
             </div>
@@ -694,6 +779,22 @@ export default function CourseOutlinePage() {
                     value={lessonModal.vid}
                     onChange={(e) => setLessonModal(prev => ({ ...prev, vid: e.target.value }))}
                     placeholder="e.g. rfscVS0vtbw"
+                    style={{
+                      width: '100%', background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8,
+                      padding: '8px 12px', color: T.text, fontSize: 13, fontFamily: 'inherit', outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* PDF Reference URL */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14 }}>
+                  <label htmlFor="lessonPdf" style={{ color: T.text, fontSize: 12, fontWeight: 500 }}>Lesson PDF Resource URL (optional)</label>
+                  <input
+                    id="lessonPdf"
+                    type="text"
+                    value={lessonModal.pdf || ''}
+                    onChange={(e) => setLessonModal(prev => ({ ...prev, pdf: e.target.value }))}
+                    placeholder="e.g. Google Drive link or static PDF URL"
                     style={{
                       width: '100%', background: T.s2, border: `1px solid ${T.border}`, borderRadius: 8,
                       padding: '8px 12px', color: T.text, fontSize: 13, fontFamily: 'inherit', outline: 'none'
@@ -972,6 +1073,18 @@ export default function CourseOutlinePage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Floating Sync Toast Notification */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, background: T.green, color: '#000',
+          padding: '12px 24px', borderRadius: 8, fontSize: 13.5, fontWeight: 700,
+          boxShadow: '0 8px 24px rgba(34, 197, 160, 0.25)', zIndex: 10000,
+          animation: 'card-enter 0.3s ease'
+        }}>
+          {toastMsg}
         </div>
       )}
 

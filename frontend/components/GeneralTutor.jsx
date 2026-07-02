@@ -622,174 +622,233 @@ export default function GeneralTutor() {
                       </div>
                     </div>
 
-                    {/* ── Rendered features ── */}
-                    {msg.activeFeature === 'quiz' && msg.features?.quiz?.questions?.length > 0 && (
-                      <div data-feature-container="true" style={{ marginTop: 16, background: T.s1, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20 }}>
-                        {(() => {
-                          const q = msg.features.quiz;
-                          const question = q.questions[q.currentIdx];
-                          if (!question) return null;
-                          return (
-                            <>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                                <span style={{ fontSize: 12, color: T.muted }}>Question {q.currentIdx + 1} of {q.questions.length}</span>
-                                <button onClick={() => handleGenerateFeature(mi, 'quiz')}
-                                  style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>
-                                  Regenerate
-                                </button>
-                              </div>
-                              <div style={{ color: T.text, fontSize: 14, fontWeight: 600, marginBottom: 14, lineHeight: 1.5 }}>{question.question}</div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                                {question.options.map((opt, oi) => {
-                                  const answered = q.currentAnswer !== null;
-                                  const selected = q.currentAnswer === oi;
-                                  const correct = oi === question.correct;
-                                  let bg = T.s3, bd = T.border, cl = T.muted;
-                                  if (answered && correct) { bg = `${T.green}18`; bd = `${T.green}50`; cl = T.green; }
-                                  else if (answered && selected) { bg = `${T.red}18`; bd = `${T.red}50`; cl = T.red; }
-                                  else if (selected) { bg = `${T.accent}18`; bd = `${T.accent}50`; cl = T.accent; }
-                                  return (
-                                    <button key={oi} onClick={() => handleQuizAnswer(mi, oi)} disabled={answered}
-                                      style={{ background: bg, border: `1px solid ${bd}`, borderRadius: 9, padding: '10px 14px', color: cl, fontSize: 13, cursor: answered ? 'default' : 'pointer', textAlign: 'left', transition: 'all 0.15s' }}>
-                                      <span style={{ fontWeight: 700, marginRight: 8 }}>{'ABCD'[oi]})</span>{opt}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {q.currentAnswer !== null && (
-                                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: 13, color: q.currentAnswer === question.correct ? T.green : T.red, fontWeight: 600 }}>
-                                    {q.currentAnswer === question.correct ? '\u2713 Correct!' : `\u2717 Incorrect \u2014 correct: ${'ABCD'[question.correct]}`}
-                                  </span>
-                                  <div style={{ display: 'flex', gap: 8 }}>
-                                    {q.currentIdx > 0 && (
-                                      <button onClick={() => handleQuizNav(mi, 'prev')}
-                                        style={{ background: T.s3, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>
-                                        \u2190 Prev
-                                      </button>
-                                    )}
-                                    {q.currentIdx < q.questions.length - 1 && (
-                                      <button onClick={() => handleQuizNav(mi, 'next')}
-                                        style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                        Next <ChevronRight size={12} />
-                                      </button>
-                                    )}
-                                    {q.currentIdx === q.questions.length - 1 && (
-                                      <span style={{ fontSize: 12, color: T.muted }}>Quiz complete!</span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {msg.activeFeature === 'flashcards' && msg.features?.flashcards?.cards?.length > 0 && (
-                      <div data-feature-container="true" style={{ marginTop: 16, background: T.s1, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20 }}>
-                        {(() => {
-                          const fc = msg.features.flashcards;
-                          const card = fc.cards[fc.currentIdx];
-                          if (!card) return null;
-                          return (
-                            <>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                                <span style={{ fontSize: 12, color: T.muted }}>Card {fc.currentIdx + 1} of {fc.cards.length}</span>
-                                <button onClick={() => handleGenerateFeature(mi, 'flashcards')}
-                                  style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>
-                                  Regenerate
-                                </button>
-                              </div>
-                              <div onClick={() => handleFlashcardFlip(mi)} style={{ cursor: 'pointer' }}>
-                                <div style={{ background: fc.flipped ? `${T.purple}15` : T.s3, border: `1px solid ${fc.flipped ? T.purple + '40' : T.border}`, borderRadius: 14, padding: '32px 24px', minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', transition: 'all 0.3s' }}>
-                                  <div style={{ fontSize: 11, color: T.muted, letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
-                                    {fc.flipped ? 'Answer' : 'Question \u2014 tap to reveal'}
-                                  </div>
-                                  <div style={{ fontSize: 15, color: T.text, fontWeight: fc.flipped ? 400 : 600, lineHeight: 1.6 }}>
-                                    {fc.flipped ? card.back : card.front}
-                                  </div>
-                                  {!fc.flipped && <div style={{ marginTop: 12, fontSize: 11, color: T.dim }}>tap to flip</div>}
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 12 }}>
-                                <button onClick={() => handleFlashcardNav(mi, 'prev')}
-                                  style={{ background: T.s3, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 8, padding: '7px 16px', cursor: 'pointer', fontSize: 13 }}>
-                                  \u2190 Prev
-                                </button>
-                                <button onClick={() => handleFlashcardNav(mi, 'next')}
-                                  style={{ background: T.s3, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 8, padding: '7px 16px', cursor: 'pointer', fontSize: 13 }}>
-                                  Next \u2192
-                                </button>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginTop: 8 }}>
-                                {fc.cards.map((_, i) => (
-                                  <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: fc.currentIdx === i ? T.purple : T.dim, transition: 'all 0.2s' }} />
-                                ))}
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {msg.activeFeature === 'infographic' && msg.features?.infographic?.points?.length > 0 && (
-                      <div data-feature-container="true" style={{ marginTop: 16, background: T.s1, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                          <span style={{ fontSize: 12, color: T.muted }}>Key concepts at a glance</span>
-                          <button onClick={() => handleGenerateFeature(mi, 'infographic')}
-                            style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>
-                            Regenerate
-                          </button>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: fCol, gap: 10 }}>
-                          {msg.features.infographic.points.map((pt, i) => {
-                            const colors = [T.accent, T.green, T.purple, T.amber, T.red];
-                            const icons = ['\uD83C\uDFAF', '\uD83D\uDCCC', '\u26A1', '\uD83D\uDD11', '\uD83C\uDF1F', '\uD83D\uDC8E', '\uD83E\uDDE9', '\uD83D\uDE80'];
-                            const c = colors[i % colors.length];
+                    {/* HTML Tab Suggestions Container */}
+                    {msg.activeFeature && (
+                      <div data-feature-container="true" style={{ marginTop: 16, background: T.s1, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 8px 30px rgba(0, 0, 0, 0.12)' }}>
+                        {/* Tab Headers */}
+                        <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, background: T.s2, overflowX: 'auto' }} className="no-scrollbar">
+                          {SUGGESTIONS.map(s => {
+                            const isTabActive = msg.activeFeature === s.id;
+                            const isGenerated = !!msg.features?.[s.id];
                             return (
-                              <div key={i} style={{ background: T.s3, border: `1px solid ${c}25`, borderRadius: 10, padding: '14px', position: 'relative', overflow: 'hidden' }}>
-                                <div style={{ position: 'absolute', top: -10, right: -10, width: 50, height: 50, borderRadius: '50%', background: `${c}08` }} />
-                                <div style={{ fontSize: 20, marginBottom: 6 }}>{icons[i % icons.length]}</div>
-                                <div style={{ color: T.text, fontSize: 13, lineHeight: 1.5, fontWeight: 500 }}>{pt}</div>
-                                <div style={{ position: 'absolute', bottom: 0, left: 0, height: 2, width: '100%', background: `linear-gradient(90deg,${c},transparent)` }} />
-                              </div>
+                              <button
+                                key={s.id}
+                                data-feature-button="true"
+                                onClick={() => handleFeatureClick(mi, s.id)}
+                                style={{
+                                  padding: '12px 18px',
+                                  background: isTabActive ? T.s1 : 'transparent',
+                                  border: 'none',
+                                  borderBottom: isTabActive ? `2px solid ${s.color}` : 'none',
+                                  color: isTabActive ? T.text : T.dim,
+                                  fontSize: 12.5,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  transition: 'all 0.15s'
+                                }}
+                              >
+                                <s.Icon size={13} color={isTabActive ? s.color : T.dim} />
+                                <span>{s.label}</span>
+                                {isGenerated && <span style={{ width: 4, height: 4, borderRadius: '50%', background: s.color }} />}
+                              </button>
                             );
                           })}
                         </div>
-                      </div>
-                    )}
 
-                    {msg.activeFeature === 'simpler' && msg.features?.simpler?.text && (
-                      <div data-feature-container="true" style={{ marginTop: 12, background: `${T.green}10`, border: `1px solid ${T.green}30`, borderRadius: 10, padding: '14px 18px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, color: T.green, fontWeight: 700, letterSpacing: '0.05em' }}>SIMPLIFIED</span>
-                          <button onClick={() => handleGenerateFeature(mi, 'simpler')}
-                            style={{ background: 'none', border: `1px solid ${T.green}40`, color: T.green, borderRadius: 6, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}>
-                            Regenerate
-                          </button>
-                        </div>
-                        <div style={{ color: T.text, fontSize: 14, lineHeight: 1.7 }}>
-                          <div className="md-content">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanMarkdown(msg.features.simpler.text)}</ReactMarkdown>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                        {/* Tab Content Panel */}
+                        <div style={{ padding: 20 }}>
+                          {/* Rendering the active tab's view */}
+                          {msg.activeFeature === 'quiz' && (
+                            msg.features?.quiz?.questions?.length > 0 ? (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                                  <span style={{ fontSize: 12, color: T.muted }}>Question {msg.features.quiz.currentIdx + 1} of {msg.features.quiz.questions.length}</span>
+                                  <button onClick={() => handleGenerateFeature(mi, 'quiz')}
+                                    style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>
+                                    Regenerate
+                                  </button>
+                                </div>
+                                <div style={{ color: T.text, fontSize: 14, fontWeight: 600, marginBottom: 14, lineHeight: 1.5 }}>{msg.features.quiz.questions[msg.features.quiz.currentIdx]?.question}</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                                  {msg.features.quiz.questions[msg.features.quiz.currentIdx]?.options.map((opt, oi) => {
+                                    const answered = msg.features.quiz.currentAnswer !== null;
+                                    const selected = msg.features.quiz.currentAnswer === oi;
+                                    const correct = oi === msg.features.quiz.questions[msg.features.quiz.currentIdx].correct;
+                                    let bg = T.s3, bd = T.border, cl = T.muted;
+                                    if (answered && correct) { bg = `${T.green}18`; bd = `${T.green}50`; cl = T.green; }
+                                    else if (answered && selected) { bg = `${T.red}18`; bd = `${T.red}50`; cl = T.red; }
+                                    else if (selected) { bg = `${T.accent}18`; bd = `${T.accent}50`; cl = T.accent; }
+                                    return (
+                                      <button key={oi} onClick={() => handleQuizAnswer(mi, oi)} disabled={answered}
+                                        style={{ background: bg, border: `1px solid ${bd}`, borderRadius: 9, padding: '10px 14px', color: cl, fontSize: 13, cursor: answered ? 'default' : 'pointer', textAlign: 'left', transition: 'all 0.15s' }}>
+                                        <span style={{ fontWeight: 700, marginRight: 8 }}>{'ABCD'[oi]})</span>{opt}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {msg.features.quiz.currentAnswer !== null && (
+                                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: 13, color: msg.features.quiz.currentAnswer === msg.features.quiz.questions[msg.features.quiz.currentIdx].correct ? T.green : T.red, fontWeight: 600 }}>
+                                      {msg.features.quiz.currentAnswer === msg.features.quiz.questions[msg.features.quiz.currentIdx].correct ? '\u2713 Correct!' : `\u2717 Incorrect \u2014 correct: ${'ABCD'[msg.features.quiz.questions[msg.features.quiz.currentIdx].correct]}`}
+                                    </span>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                      {msg.features.quiz.currentIdx > 0 && (
+                                        <button onClick={() => handleQuizNav(mi, 'prev')}
+                                          style={{ background: T.s3, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>
+                                          &larr; Prev
+                                        </button>
+                                      )}
+                                      {msg.features.quiz.currentIdx < msg.features.quiz.questions.length - 1 && (
+                                        <button onClick={() => handleQuizNav(mi, 'next')}
+                                          style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                          Next <ChevronRight size={12} />
+                                        </button>
+                                      )}
+                                      {msg.features.quiz.currentIdx === msg.features.quiz.questions.length - 1 && (
+                                        <span style={{ fontSize: 12, color: T.muted }}>Quiz complete!</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div style={{ textAlign: 'center', padding: '20px 0', color: T.muted }}>
+                                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 10px' }} />
+                                Loading Quiz Questions...
+                              </div>
+                            )
+                          )}
 
-                    {msg.activeFeature === 'examples' && msg.features?.examples?.text && (
-                      <div data-feature-container="true" style={{ marginTop: 12, background: `${T.accent}10`, border: `1px solid ${T.accent}30`, borderRadius: 10, padding: '14px 18px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, color: T.accent, fontWeight: 700, letterSpacing: '0.05em' }}>EXAMPLES</span>
-                          <button onClick={() => handleGenerateFeature(mi, 'examples')}
-                            style={{ background: 'none', border: `1px solid ${T.accent}40`, color: T.accent, borderRadius: 6, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}>
-                            Regenerate
-                          </button>
-                        </div>
-                        <div style={{ color: T.text, fontSize: 14, lineHeight: 1.7 }}>
-                          <div className="md-content">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanMarkdown(msg.features.examples.text)}</ReactMarkdown>
-                          </div>
+                          {msg.activeFeature === 'flashcards' && (
+                            msg.features?.flashcards?.cards?.length > 0 ? (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                                  <span style={{ fontSize: 12, color: T.muted }}>Card {msg.features.flashcards.currentIdx + 1} of {msg.features.flashcards.cards.length}</span>
+                                  <button onClick={() => handleGenerateFeature(mi, 'flashcards')}
+                                    style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>
+                                    Regenerate
+                                  </button>
+                                </div>
+                                <div onClick={() => handleFlashcardFlip(mi)} style={{ cursor: 'pointer' }}>
+                                  <div style={{ background: msg.features.flashcards.flipped ? `${T.purple}15` : T.s3, border: `1px solid ${msg.features.flashcards.flipped ? T.purple + '40' : T.border}`, borderRadius: 14, padding: '32px 24px', minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', transition: 'all 0.3s' }}>
+                                    <div style={{ fontSize: 11, color: T.muted, letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
+                                      {msg.features.flashcards.flipped ? 'Answer' : 'Question \u2014 tap to reveal'}
+                                    </div>
+                                    <div style={{ fontSize: 15, color: T.text, fontWeight: msg.features.flashcards.flipped ? 400 : 600, lineHeight: 1.6 }}>
+                                      {msg.features.flashcards.flipped ? msg.features.flashcards.cards[msg.features.flashcards.currentIdx]?.back : msg.features.flashcards.cards[msg.features.flashcards.currentIdx]?.front}
+                                    </div>
+                                    {!msg.features.flashcards.flipped && <div style={{ marginTop: 12, fontSize: 11, color: T.dim }}>tap to flip</div>}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 12 }}>
+                                  <button onClick={() => handleFlashcardNav(mi, 'prev')}
+                                    style={{ background: T.s3, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 8, padding: '7px 16px', cursor: 'pointer', fontSize: 13 }}>
+                                    &larr; Prev
+                                  </button>
+                                  <button onClick={() => handleFlashcardNav(mi, 'next')}
+                                    style={{ background: T.s3, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 8, padding: '7px 16px', cursor: 'pointer', fontSize: 13 }}>
+                                    Next &rarr;
+                                  </button>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginTop: 8 }}>
+                                  {msg.features.flashcards.cards.map((_, i) => (
+                                    <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: msg.features.flashcards.currentIdx === i ? T.purple : T.dim, transition: 'all 0.2s' }} />
+                                  ))}
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ textAlign: 'center', padding: '20px 0', color: T.muted }}>
+                                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 10px' }} />
+                                Loading Flashcards...
+                              </div>
+                            )
+                          )}
+
+                          {msg.activeFeature === 'infographic' && (
+                            msg.features?.infographic?.points?.length > 0 ? (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                                  <span style={{ fontSize: 12, color: T.muted }}>Key concepts at a glance</span>
+                                  <button onClick={() => handleGenerateFeature(mi, 'infographic')}
+                                    style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>
+                                    Regenerate
+                                  </button>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: fCol, gap: 10 }}>
+                                  {msg.features.infographic.points.map((pt, i) => {
+                                    const colors = [T.accent, T.green, T.purple, T.amber, T.red];
+                                    const icons = ['\uD83C\uDFAF', '\uD83D\uDCCC', '\u26A1', '\uD83D\uDD11', '\uD83C\uDF1F', '\uD83D\uDC8E', '\uD83E\uDDE9', '\uD83D\uDE80'];
+                                    const c = colors[i % colors.length];
+                                    return (
+                                      <div key={i} style={{ background: T.s3, border: `1px solid ${c}25`, borderRadius: 10, padding: '14px', position: 'relative', overflow: 'hidden' }}>
+                                        <div style={{ position: 'absolute', top: -10, right: -10, width: 50, height: 50, borderRadius: '50%', background: `${c}08` }} />
+                                        <div style={{ fontSize: 20, marginBottom: 6 }}>{icons[i % icons.length]}</div>
+                                        <div style={{ color: T.text, fontSize: 13, lineHeight: 1.5, fontWeight: 500 }}>{pt}</div>
+                                        <div style={{ position: 'absolute', bottom: 0, left: 0, height: 2, width: '100%', background: `linear-gradient(90deg,${c},transparent)` }} />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ textAlign: 'center', padding: '20px 0', color: T.muted }}>
+                                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 10px' }} />
+                                Generating Visual Summary...
+                              </div>
+                            )
+                          )}
+
+                          {msg.activeFeature === 'simpler' && (
+                            msg.features?.simpler?.text ? (
+                              <div style={{ background: `${T.green}10`, border: `1px solid ${T.green}30`, borderRadius: 10, padding: '14px 18px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <span style={{ fontSize: 11, color: T.green, fontWeight: 700, letterSpacing: '0.05em' }}>SIMPLIFIED</span>
+                                  <button onClick={() => handleGenerateFeature(mi, 'simpler')}
+                                    style={{ background: 'none', border: `1px solid ${T.green}40`, color: T.green, borderRadius: 6, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}>
+                                    Regenerate
+                                  </button>
+                                </div>
+                                <div style={{ color: T.text, fontSize: 14, lineHeight: 1.7 }}>
+                                  <div className="md-content">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanMarkdown(msg.features.simpler.text)}</ReactMarkdown>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ textAlign: 'center', padding: '20px 0', color: T.muted }}>
+                                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 10px' }} />
+                                Generating Simplified Explanation...
+                              </div>
+                            )
+                          )}
+
+                          {msg.activeFeature === 'examples' && (
+                            msg.features?.examples?.text ? (
+                              <div style={{ background: `${T.accent}10`, border: `1px solid ${T.accent}30`, borderRadius: 10, padding: '14px 18px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <span style={{ fontSize: 11, color: T.accent, fontWeight: 700, letterSpacing: '0.05em' }}>EXAMPLES</span>
+                                  <button onClick={() => handleGenerateFeature(mi, 'examples')}
+                                    style={{ background: 'none', border: `1px solid ${T.accent}40`, color: T.accent, borderRadius: 6, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}>
+                                    Regenerate
+                                  </button>
+                                </div>
+                                <div style={{ color: T.text, fontSize: 14, lineHeight: 1.7 }}>
+                                  <div className="md-content">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanMarkdown(msg.features.examples.text)}</ReactMarkdown>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ textAlign: 'center', padding: '20px 0', color: T.muted }}>
+                                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 10px' }} />
+                                Generating Examples...
+                              </div>
+                            )
+                          )}
                         </div>
                       </div>
                     )}

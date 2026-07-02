@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import {
-  CheckCircle, Circle, Clock, Play, GraduationCap, ChevronRight, ArrowLeft, Users, Tag, BookOpen, Terminal
+  CheckCircle, Circle, Clock, Play, GraduationCap, ChevronRight, ArrowLeft, Users, Tag, BookOpen, Terminal, X, Award
 } from 'lucide-react';
 import { T } from '@/lib/lms-data';
 import { getCourses, getCourseSyllabus, checkStudentEnrollment, enrollStudentInCourse, getStudentEnrollments, saveProgressToRedis, getProgressFromRedis } from '@/lib/frappe';
 import { useMediaQuery, isMobileMQ } from '@/lib/useMediaQuery';
 import dynamic from 'next/dynamic';
+import PDFViewerModal from './PDFViewerModal';
 const Playground = dynamic(() => import('./Playground'), { ssr: false });
 
 export default function CoursePage() {
@@ -32,6 +33,12 @@ export default function CoursePage() {
   const [userEmail, setUserEmail] = useState('');
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState([]);
+  
+  // Category & Modal States
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
+  const [isPdfViewerOpen, setIsPdfViewerOpen] = useState(false);
+  const [selectedPdfResource, setSelectedPdfResource] = useState(null);
 
   // Fetch courses and load completion progress
   useEffect(() => {
@@ -293,6 +300,25 @@ export default function CoursePage() {
           <p style={{ color: T.muted, margin: 0, fontSize: 14, lineHeight: 1.5 }}>
             {details.tagline}
           </p>
+
+          {selectedCourse.pdf && (
+            <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => {
+                  setSelectedPdfResource({ file_link: selectedCourse.pdf, name: `${selectedCourse.title} Reference Materials` });
+                  setIsPdfViewerOpen(true);
+                }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: `${T.accent}12`, border: `1px solid ${T.accent}40`,
+                  color: T.accent, padding: '7px 14px', borderRadius: 8,
+                  fontSize: 12.5, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s'
+                }}
+              >
+                📄 View Course PDF Materials
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Enrollment CTA Card or Outline List */}
@@ -348,7 +374,44 @@ export default function CoursePage() {
             </button>
           </div>
         ) : (
-          <>
+          <div>
+            {progressPercent === 100 && (
+              <div style={{
+                background: `linear-gradient(135deg, ${T.purple}12 0%, ${T.accent}12 100%)`,
+                border: `1px solid ${T.purple}30`,
+                borderRadius: 16,
+                padding: '24px 20px',
+                textAlign: 'center',
+                marginBottom: 20,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 12
+              }}>
+                <div style={{ fontSize: 32 }}>🏆</div>
+                <h3 style={{ color: T.text, fontSize: 16, fontWeight: 700, margin: 0 }}>Congratulations! You completed the course!</h3>
+                <p style={{ color: T.muted, fontSize: 13, margin: 0, maxWidth: 460 }}>
+                  You have successfully completed all lessons in this course. You can now view and download your verified completion certificate!
+                </p>
+                <button
+                  onClick={() => setIsCertModalOpen(true)}
+                  style={{
+                    background: `linear-gradient(135deg, ${T.purple} 0%, ${T.accent} 100%)`,
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 20px',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(155, 110, 248, 0.2)'
+                  }}
+                >
+                  View Completion Certificate
+                </button>
+              </div>
+            )}
+
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: T.muted }}>
                 <span>Progress: {done}/{total} lessons completed</span>
@@ -441,7 +504,7 @@ export default function CoursePage() {
                 );
               })}
             </div>
-          </>
+          </div>
         )}
           {isPlaygroundOpen && isMobile && (
             <div style={{ marginTop: 24, height: 400, flexShrink: 0 }}>
@@ -524,12 +587,42 @@ export default function CoursePage() {
           </button>
         </div>
 
-      {courses.length === 0 ? (
+        {/* Category Filter Pills */}
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 12, marginBottom: 20 }} className="no-scrollbar">
+          {['All', 'Programming', 'Web Development', 'Design', 'Business', 'Personal Development'].map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              style={{
+                background: selectedCategory === cat ? T.accent : T.s2,
+                color: selectedCategory === cat ? '#fff' : T.text,
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: 20,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s'
+              }}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+      {courses.filter(c => {
+          // Filter locally deleted
+          let locallyDeleted = [];
+          try { locallyDeleted = JSON.parse(localStorage.getItem('locally_deleted_courses') || '[]'); } catch(e) {}
+          if (locallyDeleted.includes(c.id)) return false;
+          return selectedCategory === 'All' || c.category === selectedCategory;
+        }).length === 0 ? (
         <div style={{ background: T.s1, border: `1px solid ${T.border}`, borderRadius: 16, padding: '48px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🎓</div>
           <h3 style={{ color: T.text, fontSize: 16, fontWeight: 600, margin: '0 0 6px 0' }}>No published courses</h3>
           <p style={{ color: T.muted, fontSize: 13, maxWidth: 320, margin: '0 auto' }}>
-            There are no published courses right now. Go to the Admin dashboard to create and publish a course.
+            There are no published courses under this category. Go to the Admin dashboard to create and publish a course.
           </p>
         </div>
       ) : (
@@ -538,9 +631,22 @@ export default function CoursePage() {
           gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
           gap: 20
         }}>
-          {courses.map(course => {
+          {courses.filter(c => {
+            let locallyDeleted = [];
+            try { locallyDeleted = JSON.parse(localStorage.getItem('locally_deleted_courses') || '[]'); } catch(e) {}
+            if (locallyDeleted.includes(c.id)) return false;
+            return selectedCategory === 'All' || c.category === selectedCategory;
+          }).map(course => {
             const totalLessons = course.lessonsCount || 0;
             const isStudentEnrolled = enrolledCourseIds.includes(course.id);
+            
+            // Duration and Level Estimates
+            const totalMins = totalLessons * 10;
+            const hours = Math.floor(totalMins / 60);
+            const mins = totalMins % 60;
+            const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+            
+            const level = course.title.toLowerCase().includes('advanced') || course.title.toLowerCase().includes('expert') ? 'Advanced' : (course.title.toLowerCase().includes('intermediate') ? 'Intermediate' : 'Beginner');
 
             return (
               <div
@@ -555,7 +661,7 @@ export default function CoursePage() {
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  minHeight: 200,
+                  minHeight: 220,
                   position: 'relative',
                   overflow: 'hidden',
                   transition: 'all 0.2s ease'
@@ -598,6 +704,16 @@ export default function CoursePage() {
                   <p style={{ color: T.muted, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 16px 0' }}>
                     {course.tagline || ""}
                   </p>
+                  
+                  {/* Level tag and Duration */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10, color: T.purple, background: `${T.purple}12`, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                      {level}
+                    </span>
+                    <span style={{ fontSize: 10, color: T.muted }}>
+                      ⏱️ {durationStr} total
+                    </span>
+                  </div>
                 </div>
 
                 {/* Footer Details */}
@@ -661,6 +777,75 @@ export default function CoursePage() {
           <Playground initialCode={`# General Coding Playground\n# Write your code here\n\n`} />
         </div>
       )}
+
+      {/* Course Completion Certificate Modal */}
+      {isCertModalOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(7, 8, 15, 0.85)', backdropFilter: 'blur(8px)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+        }}>
+          <div style={{
+            background: '#faf7f7ff', border: '15px double #7C3AED',
+            borderRadius: 8, width: '100%', maxWidth: 700, padding: '40px 48px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.5)', position: 'relative',
+            color: '#0F1D30', fontFamily: 'serif', textAlign: 'center'
+          }}>
+            {/* Close Button */}
+            <button
+              onClick={() => setIsCertModalOpen(false)}
+              style={{
+                position: 'absolute', top: 16, right: 16, background: 'transparent',
+                border: 'none', cursor: 'pointer', color: '#647298'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            {/* Certificate Content */}
+            <div style={{ border: '2px solid #7C3AED', padding: '30px 20px' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#7C3AED', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 16 }}>
+                Certificate of Completion
+              </div>
+              <div style={{ fontSize: 12, fontStyle: 'italic', color: '#4B5E7D', marginBottom: 24 }}>
+                This is proudly presented to
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: '#0F1D30', borderBottom: '2px solid #E1EBF5', display: 'inline-block', paddingBottom: 6, marginBottom: 18, minWidth: 260 }}>
+                {userEmail ? (userEmail.split('@')[0].replace(/\d+/g, '').replace(/[\._]/g, ' ').toUpperCase()) : 'AARAV MEHTA'}
+              </div>
+              <div style={{ fontSize: 13, color: '#4B5E7D', lineHeight: 1.6, maxWidth: 500, margin: '0 auto 28px' }}>
+                for successfully fulfilling all requirements and completing the certified curriculum for the course
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1D30', marginTop: 8, fontFamily: 'var(--font-outfit), sans-serif' }}>
+                  {selectedCourse?.title}
+                </div>
+              </div>
+
+              {/* Signatures & Date */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 20, padding: '0 30px' }}>
+                <div style={{ textAlign: 'center', width: 140 }}>
+                  <div style={{ fontSize: 12, fontFamily: 'monospace', fontStyle: 'italic', color: '#7C3AED', marginBottom: 4 }}>AI Tutor Academy</div>
+                  <div style={{ borderTop: '1px solid #C4CFE5', paddingTop: 4, fontSize: 10, color: '#8CA2C0', textTransform: 'uppercase' }}>Authorized Entity</div>
+                </div>
+                <div style={{ fontSize: 11, color: '#8CA2C0' }}>
+                  Issued on: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </div>
+                <div style={{ textAlign: 'center', width: 140 }}>
+                  <div style={{ fontSize: 14, fontFamily: 'cursive', color: '#2563EB', marginBottom: 4 }}>Seshu Yashu</div>
+                  <div style={{ borderTop: '1px solid #C4CFE5', paddingTop: 4, fontSize: 10, color: '#8CA2C0', textTransform: 'uppercase' }}>Lead Instructor</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF Viewer Modal */}
+      <PDFViewerModal
+        isOpen={isPdfViewerOpen}
+        onClose={() => { setIsPdfViewerOpen(false); setSelectedPdfResource(null); }}
+        pdfResource={selectedPdfResource}
+      />
+
     </div>
   );
 }

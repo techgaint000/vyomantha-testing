@@ -455,7 +455,7 @@ export default function LoginPage() {
 
         {/* Footer info */}
         <div style={{ textAlign: 'center', fontSize: 11.5, color: T.dim }}>
-          © 2026 LMS Platform. All rights reserved.
+          © 2026 AI TUTOR Platform. All rights reserved.
         </div>
 
       </div>

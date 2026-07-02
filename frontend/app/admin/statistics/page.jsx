@@ -75,15 +75,6 @@ export default function AdminStatisticsPage() {
           console.error("Failed to load api consumption data:", e);
         }
 
-        // Seed default completions if not set so there are initial progress values
-        const defaultLessonsCompletions = {
-          'student1@lms.com': { '1_l1': true, '2_l1': true, '3_l1': true, 'python_l1': true }, // Aarav
-          'student2@lms.com': { '1_l1': true, '2_l1': true },                                 // Sneha
-          'student3@lms.com': { '1_l1': true, '2_l1': true, '3_l1': true, '4_l1': true },     // Rohan
-          'student4@lms.com': { '1_l1': true },                                               // Priya
-          'student5@lms.com': {}                                                              // Aditya
-        };
-
         const studentCompletions = await Promise.all(students.map(async (std) => {
           let completed = allProgress[std.username];
 
@@ -95,19 +86,8 @@ export default function AdminStatisticsPage() {
             } catch (e) {}
           }
 
-          // If still no progress, use default completions for standard students
           if (!completed) {
-            completed = defaultLessonsCompletions[std.username] || {};
-            
-            // Seed Redis and LocalStorage with default progress
-            try {
-              localStorage.setItem(`completed_lessons_${std.username}`, JSON.stringify(completed));
-              await fetch('/api/progress', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: std.username, completed })
-              });
-            } catch (e) {}
+            completed = {};
           }
 
           return {
@@ -205,13 +185,10 @@ export default function AdminStatisticsPage() {
             let matches = 0;
             studentCompletions.forEach(s => {
               lessonIds.forEach(lId => {
-                if (s.completed[lId]) matches++;
+                if (s.completed && s.completed[lId]) matches++;
               });
             });
             completionPct = Math.round((matches / (lessonIds.length * studentCompletions.length)) * 100);
-          } else {
-            // Default mappings matching layout
-            completionPct = course.id === '1' ? 88 : course.id === '2' ? 75 : course.id === '3' ? 92 : course.id === '4' ? 68 : 50;
           }
 
           // Calculate average quiz score for the course

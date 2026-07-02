@@ -288,7 +288,7 @@ export async function getCourses(options = {}) {
           // Fetch LMS Courses and Enrollments from Frappe in parallel
           const [courses, enrollments] = await Promise.all([
             frappeRestGet("LMS Course", {
-              fields: JSON.stringify(["name", "title", "published", "creation", "category", "short_introduction", "lessons"]),
+              fields: JSON.stringify(["name", "title", "published", "creation", "category", "short_introduction", "lessons", "description", "image"]),
               limit_page_length: 100
             }),
             frappeRestGet("LMS Enrollment", {
@@ -307,17 +307,31 @@ export async function getCourses(options = {}) {
           }
 
           if (courses && Array.isArray(courses)) {
-            list = courses.map(c => ({
-              id: c.name,
-              title: c.title,
-              instructor: "Administrator",
-              category: c.category || "Web Development",
-              tagline: c.short_introduction || "Learn the basics and get started.",
-              lessonsCount: c.lessons || 0,
-              enrolled: enrollmentCounts[c.name] || 0,
-              status: c.published ? "Published" : "Draft",
-              date: new Date(c.creation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-            }));
+            list = courses.map(c => {
+              let descText = c.description || "";
+              let pdfLink = "";
+              if (descText.trim().startsWith('{')) {
+                try {
+                  const parsed = JSON.parse(descText);
+                  descText = parsed.description || "";
+                  pdfLink = parsed.pdf || "";
+                } catch(e) {}
+              }
+              return {
+                id: c.name,
+                title: c.title,
+                instructor: "Administrator",
+                category: c.category || "Web Development",
+                tagline: c.short_introduction || "Learn the basics and get started.",
+                lessonsCount: c.lessons || 0,
+                enrolled: enrollmentCounts[c.name] || 0,
+                status: c.published ? "Published" : "Draft",
+                date: new Date(c.creation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                description: descText,
+                image: c.image || "",
+                pdf: pdfLink
+              };
+            });
           }
         } catch (e) {
           console.error("Failed to fetch courses from Frappe REST API. Falling back to local state.", e);
@@ -420,13 +434,18 @@ export async function createCourse(courseData) {
       if (courseData.instructor && (courseData.instructor.includes("@") || courseData.instructor === "Administrator")) {
         inst = courseData.instructor;
       }
+      const serializedDescription = JSON.stringify({
+        description: courseData.description || "",
+        pdf: courseData.pdf || ""
+      });
       const result = await frappeRestPost("LMS Course", {
         title: sanitizeTitle(courseData.title),
         published: courseData.status === "Published" ? 1 : 0,
         instructors: [{ instructor: inst }],
         short_introduction: courseData.tagline || courseData.short_introduction || `${courseData.title} course introduction.`,
-        description: courseData.description || `Detailed description for ${courseData.title}.`,
-        category: courseData.category || "Web Development"
+        description: serializedDescription,
+        category: courseData.category || "Web Development",
+        image: courseData.image || ""
       });
       if (result && result.name) {
         return {
@@ -436,7 +455,10 @@ export async function createCourse(courseData) {
           category: result.category || "Web Development",
           enrolled: 0,
           status: result.published ? "Published" : "Draft",
-          date: new Date(result.creation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          date: new Date(result.creation).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          description: courseData.description || "",
+          image: result.image || "",
+          pdf: courseData.pdf || ""
         };
       }
     } catch (e) {
@@ -475,13 +497,18 @@ export async function updateCourse(id, courseData) {
       if (courseData.instructor && (courseData.instructor.includes("@") || courseData.instructor === "Administrator")) {
         inst = courseData.instructor;
       }
+      const serializedDescription = JSON.stringify({
+        description: courseData.description || "",
+        pdf: courseData.pdf || ""
+      });
       const result = await frappeRestPut("LMS Course", id, {
         title: sanitizeTitle(courseData.title),
         published: courseData.status === "Published" ? 1 : 0,
         category: courseData.category || undefined,
         instructors: [{ instructor: inst }],
         short_introduction: courseData.tagline || courseData.short_introduction || undefined,
-        description: courseData.description || undefined
+        description: serializedDescription,
+        image: courseData.image || ""
       });
       if (result && result.name) {
         return {
@@ -491,7 +518,10 @@ export async function updateCourse(id, courseData) {
           category: result.category || "Web Development",
           enrolled: courseData.enrolled || 0,
           status: result.published ? "Published" : "Draft",
-          date: courseData.date
+          date: courseData.date,
+          description: courseData.description || "",
+          image: result.image || "",
+          pdf: courseData.pdf || ""
         };
       }
     } catch (e) {
@@ -712,13 +742,14 @@ export async function getCourseSyllabus(courseId, options = {}) {
                   solutionCode: '',
                   testCases: []
                 };
-
+                let pdf = "";
                 if (lDoc.instructor_notes) {
                   try {
                     const meta = JSON.parse(lDoc.instructor_notes);
                     if (Array.isArray(meta.pts)) pts = meta.pts;
                     if (Array.isArray(meta.quizQuestions)) quizQuestions = meta.quizQuestions;
                     if (meta.codingExercise) codingExercise = meta.codingExercise;
+                    if (meta.pdf) pdf = meta.pdf;
                   } catch (e) {}
                 }
 
@@ -730,7 +761,8 @@ export async function getCourseSyllabus(courseId, options = {}) {
                   overview: lDoc.body || "",
                   pts,
                   quizQuestions,
-                  codingExercise
+                  codingExercise,
+                  pdf
                 };
               } catch (err) {
                 console.error(`Failed to fetch lesson details for ${lRef.lesson}`, err);
@@ -899,7 +931,8 @@ export async function saveCourseSyllabus(courseId, syllabus) {
               starterCode: '',
               solutionCode: '',
               testCases: []
-            }
+            },
+            pdf: lesson.pdf || ""
           });
 
           if (lesson.id.startsWith("les_")) {
