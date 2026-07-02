@@ -12,13 +12,21 @@ def main():
         content = f.read()
 
     # Clean out any old definitions of our custom functions to avoid duplicates
-    for func_name in ['get_google_auth_url', 'test_google_auth_traceback', 'get_api_file', 'execute_py', 'get_courses_optimized', 'get_course_syllabus_optimized']:
+    custom_funcs = [
+        'get_google_auth_url', 'test_google_auth_traceback', 'get_api_file', 
+        'execute_py', 'get_courses_optimized', 'get_course_syllabus_optimized',
+        'sign_jwt', 'get_jwt', 'retrieve_secure_chunks_internal', 
+        'invalidate_permission_cache'
+    ]
+    for func_name in custom_funcs:
         if func_name in content:
             print(f"Found existing {func_name}. Stripping old definition...")
             content = content.split('def ' + func_name)[0]
             content = content.rstrip()
             if content.endswith('@frappe.whitelist(allow_guest=True)'):
                 content = content[:-len('@frappe.whitelist(allow_guest=True)')]
+            elif content.endswith('@frappe.whitelist()'):
+                content = content[:-len('@frappe.whitelist()')]
             content = content.rstrip()
 
     patch_code = """
@@ -261,6 +269,143 @@ def get_course_syllabus_optimized(course_id: str):
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+
+def sign_jwt(payload, secret_key):
+    import hmac
+    import hashlib
+    import base64
+    import json
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode('utf-8')).decode('utf-8').rstrip('=')
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode('utf-8')).decode('utf-8').rstrip('=')
+    msg = f"{header_b64}.{payload_b64}".encode('utf-8')
+    sig = hmac.new(secret_key.encode('utf-8'), msg, hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode('utf-8').rstrip('=')
+    return f"{header_b64}.{payload_b64}.{sig_b64}"
+
+@frappe.whitelist()
+def get_jwt():
+    import frappe
+    import time
+    if frappe.session.user == "Guest":
+        frappe.local.response["http_status_code"] = 401
+        return {"error": "Unauthorized"}
+    
+    user = frappe.get_doc("User", frappe.session.user)
+    tenant_id = user.get("tenant_id") or "default"
+    
+    payload = {
+        "user_id": frappe.session.user,
+        "tenant_id": tenant_id,
+        "exp": int(time.time()) + 3600
+    }
+    
+    secret_key = frappe.local.conf.encryption_key or "default_secret"
+    token = sign_jwt(payload, secret_key)
+    return {"token": token}
+
+@frappe.whitelist(allow_guest=True)
+def retrieve_secure_chunks_internal(security_context: str, query_vector: str, similarity_threshold: float = 0.3, limit: int = 4):
+    import frappe
+    import json
+    import os
+    import requests
+    import uuid
+    
+    req_token = frappe.get_request_header("X-Internal-Token")
+    secret_token = os.environ.get("INTERNAL_SERVICE_TOKEN") or "internal_key_123"
+    if req_token != secret_token:
+        frappe.local.response["http_status_code"] = 401
+        return {"error": "Unauthorized service call"}
+    
+    try:
+        sec_ctx = json.loads(security_context)
+        q_vec = json.loads(query_vector)
+    except Exception as e:
+        frappe.local.response["http_status_code"] = 400
+        return {"error": "Invalid JSON format"}
+    
+    tenant_id = sec_ctx.get("tenantId")
+    user_id = sec_ctx.get("userId")
+    session_id = sec_ctx.get("sessionId")
+    course_id = sec_ctx.get("courseId")
+    
+    if not tenant_id or not user_id or not session_id or not course_id:
+        frappe.local.response["http_status_code"] = 400
+        return {"error": "Missing security context parameters"}
+        
+
+    redis_url = os.environ.get("UPSTASH_REDIS_REST_URL")
+    redis_token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    is_instructor = False
+    
+    if redis_url and redis_token:
+        url_role = f"{redis_url}/get/user:is_instructor:{user_id}:{course_id}"
+        try:
+            is_instructor_res = requests.get(url_role, headers={"Authorization": f"Bearer {redis_token}"}).json()
+            is_instructor = is_instructor_res.get("result") == "1"
+        except Exception:
+            is_instructor = bool(frappe.db.exists("Course Instructor", {"parent": course_id, "instructor": user_id}))
+    else:
+        is_instructor = bool(frappe.db.exists("Course Instructor", {"parent": course_id, "instructor": user_id}))
+        
+    params = [q_vec, tenant_id, session_id]
+    role_filter = ""
+    if not is_instructor:
+        role_filter = "AND c.user_id = %s"
+        params.append(user_id)
+    else:
+        role_filter = "AND c.course_id = %s"
+        params.append(course_id)
+        
+    params.extend([similarity_threshold, limit])
+    
+    sql = """
+        SELECT c.id, c.document_id, c.content, c.page_number, 1 - VEC_COSINE_DISTANCE(c.embedding, %s) AS similarity
+        FROM `LMS Document Chunk` c
+        JOIN `tabLMS Session Document` d ON c.document_id = d.name
+        WHERE c.tenant_id = %s AND d.file_key IN (
+            SELECT file_key FROM `tabLMS Session Document` WHERE session_id = %s
+        )
+        {role_filter}
+        HAVING similarity >= %s
+        ORDER BY similarity DESC
+        LIMIT %s
+    """
+    
+    sql_formatted = sql.format(role_filter=role_filter)
+    rows = frappe.db.sql(sql_formatted, params, as_dict=True)
+    
+    log_id = str(uuid.uuid4())
+    frappe.db.sql("""
+        INSERT INTO `LMS RAG Audit Log` (id, user_id, action, document_id, session_id, tenant_id, ip_address)
+        VALUES (%s, %s, 'retrieval', NULL, %s, %s, %s)
+    """, (log_id, user_id, session_id, tenant_id, frappe.local.ip or "127.0.0.1"))
+    frappe.db.commit()
+    
+    return {"chunks": rows}
+
+def invalidate_permission_cache(doc, method=None):
+    import frappe
+    import requests
+    import os
+    
+    user_id = doc.get("member") or doc.get("instructor")
+    if not user_id:
+        return
+        
+    redis_url = os.environ.get("UPSTASH_REDIS_REST_URL")
+    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    if not redis_url or not token:
+        return
+        
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    requests.get(f"{redis_url}/del/user:courses:{{user_id}}".format(user_id=user_id), headers=headers)
+    
+    course_id = doc.get("course") or doc.get("parent")
+    if course_id:
+        requests.get(f"{redis_url}/del/user:is_instructor:{{user_id}}:{{course_id}}".format(user_id=user_id, course_id=course_id), headers=headers)
 """
 
     with open(api_path, 'w') as f:
@@ -349,6 +494,35 @@ try:
             
     frappe.integrations.oauth2_logins.login_via_google = patched_login_via_google
     print("login_via_google monkey patched successfully to handle errors and redirect gracefully!")
+    
+    # REGISTER DYNAMIC DOC EVENTS FOR CACHE INVALIDATION
+    try:
+        doc_events.update({
+            "LMS Enrollment": {
+                "after_insert": "lms.lms.api.invalidate_permission_cache",
+                "on_update": "lms.lms.api.invalidate_permission_cache",
+                "on_trash": "lms.lms.api.invalidate_permission_cache"
+            },
+            "Course Instructor": {
+                "after_insert": "lms.lms.api.invalidate_permission_cache",
+                "on_update": "lms.lms.api.invalidate_permission_cache",
+                "on_trash": "lms.lms.api.invalidate_permission_cache"
+            }
+        })
+    except NameError:
+        doc_events = {
+            "LMS Enrollment": {
+                "after_insert": "lms.lms.api.invalidate_permission_cache",
+                "on_update": "lms.lms.api.invalidate_permission_cache",
+                "on_trash": "lms.lms.api.invalidate_permission_cache"
+            },
+            "Course Instructor": {
+                "after_insert": "lms.lms.api.invalidate_permission_cache",
+                "on_update": "lms.lms.api.invalidate_permission_cache",
+                "on_trash": "lms.lms.api.invalidate_permission_cache"
+            }
+        }
+    print("doc_events cache invalidation hooks registered successfully in hooks.py!")
     
 except Exception as patch_err:
     import frappe

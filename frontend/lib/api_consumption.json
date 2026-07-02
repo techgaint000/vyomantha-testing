@@ -1,10 +1,16 @@
 {
   "api_calls": {
-    "user-mqtp4apqu18l": 4
+    "user-mqtp4apqu18l": 4,
+    "user-mr37w1i54r3j": 2,
+    "user-mr3hpqs19u4n": 5,
+    "user-mr3jh1ayotpv": 1
   },
   "tokens_consumed": {
-    "user-mqtp4apqu18l": 1712
+    "user-mqtp4apqu18l": 1712,
+    "user-mr37w1i54r3j": 568,
+    "user-mr3hpqs19u4n": 1318,
+    "user-mr3jh1ayotpv": 296
   },
-  "global_api_calls": 4,
-  "global_tokens_consumed": 1712
+  "global_api_calls": 12,
+  "global_tokens_consumed": 3894
 }

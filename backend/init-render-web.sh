@@ -147,6 +147,14 @@ kill -9 $DUMMY_PID || true
 kill -9 $(lsof -t -i:8000) 2>/dev/null || true
 sleep 2
 
+# Install queue worker dependencies in the bench virtualenv
+echo "Installing queue worker dependencies..."
+./env/bin/pip install pypdf boto3 pymysql
+
+# Start the background queue worker process
+echo "Starting background queue worker..."
+./env/bin/python /home/frappe/queue_worker.py &
+
 # Update Procfile port mapping to Render's dynamic binding
 sed -i "s/bench serve.*/bench serve --port ${PORT:-8000}/g" ./Procfile
 

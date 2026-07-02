@@ -1,4 +1,3 @@
-version: "3.7"
 name: lms
 services:
   mariadb:
@@ -22,6 +21,8 @@ services:
     image: frappe/bench:latest
     user: frappe
     command: bash /workspace/init.sh
+    env_file:
+      - .env
     environment:
       - SHELL=/bin/bash
     working_dir: /home/frappe

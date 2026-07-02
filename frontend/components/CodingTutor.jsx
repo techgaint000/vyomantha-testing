@@ -213,6 +213,35 @@ export default function CodingTutor() {
   const [textSessions, setTextSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   
+  const [jwtToken, setJwtToken] = useState(null);
+  const [sessionDocs, setSessionDocs] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState('');
+  const fileInputRef = useRef(null);
+  const sessionDocsRef = useRef([]);
+
+  useEffect(() => {
+    sessionDocsRef.current = sessionDocs;
+  }, [sessionDocs]);
+
+  useEffect(() => {
+    const fetchJwt = async () => {
+      try {
+        const res = await fetch('/api/auth/jwt');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.token) {
+            setJwtToken(data.token);
+            console.warn("[CodingTutor] Successfully retrieved JWT token.");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load JWT token:", e);
+      }
+    };
+    fetchJwt();
+  }, []);
+  
   const chatRef = useRef(null);
   const inputRef = useRef(null);
   
@@ -223,14 +252,118 @@ export default function CodingTutor() {
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionSearch, setMentionSearch] = useState('');
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [availableDocs, setAvailableDocs] = useState([]);
+
+  const fetchAvailableDocs = useCallback(async () => {
+    if (!jwtToken) return;
+    try {
+      const res = await fetch('/api/documents/list', {
+        headers: {
+          'Authorization': `Bearer ${jwtToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableDocs(data.documents || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch available docs:", e);
+    }
+  }, [jwtToken]);
+
+  useEffect(() => {
+    if (jwtToken) {
+      fetchAvailableDocs();
+    }
+  }, [jwtToken, fetchAvailableDocs]);
 
   const filteredMentions = useMemo(() => {
-    return MENTION_OPTIONS.filter(opt =>
-      opt.name.startsWith(mentionSearch.toLowerCase())
-    );
-  }, [mentionSearch]);
+    const query = mentionSearch.toLowerCase();
+    const matchedCommands = MENTION_OPTIONS.filter(opt =>
+      opt.name.startsWith(query)
+    ).map(opt => ({ ...opt, isCommand: true }));
+
+    const matchedDocs = availableDocs.filter(d =>
+      d.name.toLowerCase().includes(query)
+    ).map(d => ({
+      id: d.id,
+      name: d.name,
+      file_key: d.file_key,
+      label: d.name,
+      desc: `PDF document uploaded on ${new Date(d.creation).toLocaleDateString()}`,
+      icon: '📄',
+      color: T.purple,
+      isDoc: true
+    }));
+
+    return [...matchedCommands, ...matchedDocs];
+  }, [mentionSearch, availableDocs]);
+
+  const handleAttachDoc = async (doc) => {
+    const sid = currentSessionId || Date.now().toString(36);
+    if (!currentSessionId) setCurrentSessionId(sid);
+    
+    setUploading(true);
+    setUploadErr('');
+    setShowMentionDropdown(false);
+    
+    try {
+      const res = await fetch('/api/documents/attach', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwtToken}`
+        },
+        body: JSON.stringify({
+          file_name: doc.name,
+          file_key: doc.file_key,
+          sessionId: sid
+        })
+      });
+      
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Failed to attach document');
+      }
+      
+      const data = await res.json();
+      const newDoc = { id: data.documentId, name: doc.name, status: data.status };
+      
+      setSessionDocs(prev => {
+        const updated = [...prev, newDoc];
+        setTimeout(() => saveSession(messages, sid), 100);
+        return updated;
+      });
+      
+      if (inputRef.current) {
+        const val = topic;
+        const selectionStart = inputRef.current.selectionStart;
+        const textBeforeCursor = val.slice(0, selectionStart);
+        const atIndex = textBeforeCursor.lastIndexOf('@');
+        if (atIndex !== -1) {
+          const newVal = val.slice(0, atIndex) + val.slice(selectionStart);
+          setTopic(newVal);
+          setTimeout(() => {
+            inputRef.current.focus();
+            inputRef.current.selectionStart = atIndex;
+            inputRef.current.selectionEnd = atIndex;
+          }, 50);
+        }
+      }
+    } catch (e) {
+      console.error("Attach error:", e);
+      setUploadErr(e.message || 'Error attaching document');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSelectMention = (option) => {
+    if (option.isDoc) {
+      handleAttachDoc(option);
+      return;
+    }
+    
     const textBefore = topic.slice(0, topic.lastIndexOf('@'));
     const newText = `${textBefore}@${option.name} `;
     setTopic(newText);
@@ -457,7 +590,8 @@ export default function CodingTutor() {
     setMode(session.mode || 'Beginner');
     setLength(session.length || 'Short');
     setCurrentSessionId(session.id);
-    setErr(''); setTopic('');
+    setSessionDocs(session.documents || []);
+    setErr(''); setTopic(''); setUploadErr('');
   }, []);
 
   // Handle click outside to close open feature cards
@@ -482,8 +616,10 @@ export default function CodingTutor() {
     const handleNew = () => {
       setMessages([]);
       setCurrentSessionId(null);
+      setSessionDocs([]);
       setTopic('');
       setErr('');
+      setUploadErr('');
       setIsPlaygroundOpen(false);
       setCodeOverride(null);
       setExplanationOverride(null);
@@ -506,6 +642,7 @@ export default function CodingTutor() {
     const session = {
       id: sid, label, topic: label, mode, length,
       messages: msgs,
+      documents: sessionDocsRef.current || [],
       timestamp: new Date().toISOString(),
     };
     const updated = [session, ...textSessions.filter(s => s.id !== sid)];
@@ -513,6 +650,168 @@ export default function CodingTutor() {
     setCurrentSessionId(sid);
     try { localStorage.setItem(textSessKey, JSON.stringify(updated)); } catch {}
   }, [mode, length, textSessions, currentSessionId, textSessKey]);
+
+  const trackStatusStream = useCallback((docId, token) => {
+    const sseUrl = `/api/documents/status-stream?documentId=${docId}&token=${encodeURIComponent(token)}`;
+    const sse = new EventSource(sseUrl);
+    
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const status = data.status;
+        
+        setSessionDocs(prev => {
+          const updated = prev.map(d => d.id === docId ? { ...d, status } : d);
+          setTimeout(() => {
+            const raw = localStorage.getItem(textSessKey);
+            if (raw) {
+              const sessions = JSON.parse(raw);
+              const sid = currentSessionId || localStorage.getItem('current-coding-tutor-session-id');
+              const sessIdx = sessions.findIndex(s => s.id === sid);
+              if (sessIdx !== -1) {
+                sessions[sessIdx].documents = updated;
+                localStorage.setItem(textSessKey, JSON.stringify(sessions));
+                setTextSessions(sessions);
+              }
+            }
+          }, 100);
+          return updated;
+        });
+        
+        if (status === 'completed' || status === 'failed') {
+          sse.close();
+        }
+      } catch (e) {
+        console.error("[SSE Status] Error parsing status event:", e);
+      }
+    };
+    
+    sse.onerror = () => {
+      sse.close();
+    };
+  }, [currentSessionId, textSessKey]);
+
+  useEffect(() => {
+    if (jwtToken && sessionDocs.length > 0) {
+      sessionDocs.forEach(d => {
+        if (d.status === 'pending_ingestion' || d.status === 'processing') {
+          trackStatusStream(d.id, jwtToken);
+        }
+      });
+    }
+  }, [jwtToken, sessionDocs.length]);
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
+      setUploadErr('Only PDF files are allowed.');
+      return;
+    }
+    
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadErr('File size cannot exceed 10MB.');
+      return;
+    }
+    
+    setUploading(true);
+    setUploadErr('');
+    
+    const sid = currentSessionId || Date.now().toString(36);
+    if (!currentSessionId) setCurrentSessionId(sid);
+    
+    try {
+      let token = jwtToken;
+      if (!token) {
+        const jwtRes = await fetch('/api/auth/jwt');
+        if (jwtRes.ok) {
+          const jwtData = await jwtRes.json();
+          token = jwtData.token;
+          setJwtToken(token);
+        }
+      }
+      
+      if (!token) {
+        throw new Error("Unable to obtain authenticated token. Please refresh.");
+      }
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('sessionId', sid);
+      formData.append('courseId', 'general');
+      
+      const res = await fetch('/api/documents/upload', {
+         method: 'POST',
+         headers: {
+           'Authorization': `Bearer ${token}`
+         },
+         body: formData
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to upload document.');
+      }
+      
+      const data = await res.json();
+      const newDoc = { id: data.documentId, name: file.name, status: data.status };
+      
+      setSessionDocs(prev => {
+        const updated = [...prev, newDoc];
+        setTimeout(() => saveSession(messages, sid), 100);
+        return updated;
+      });
+      
+      trackStatusStream(data.documentId, token);
+    } catch (err) {
+      console.error("Upload error:", err);
+      setUploadErr(err.message || 'Error uploading document.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteDoc = async (docId) => {
+    const sid = currentSessionId;
+    if (!sid) return;
+    
+    try {
+      let token = jwtToken;
+      if (!token) {
+        const jwtRes = await fetch('/api/auth/jwt');
+        if (jwtRes.ok) {
+          const jwtData = await jwtRes.json();
+          token = jwtData.token;
+          setJwtToken(token);
+        }
+      }
+      
+      const res = await fetch('/api/documents/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ documentId: docId, sessionId: sid })
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete document.');
+      }
+      
+      setSessionDocs(prev => {
+        const updated = prev.filter(d => d.id !== docId);
+        setTimeout(() => saveSession(messages, sid), 100);
+        return updated;
+      });
+    } catch (err) {
+      console.error("Delete error:", err);
+      setUploadErr(err.message || 'Error deleting document.');
+    }
+  };
 
   // Construct a specialized coding feature system prompt that enforces programming constraints
   const getCodingFeatureSystem = (type) => {
@@ -672,10 +971,16 @@ export default function CodingTutor() {
         finalPrompt = buildChatPrompt(raw, mode, length);
       }
 
-      const res = await fetch('/api/gemini/stream', {
+      const targetEndpoint = jwtToken ? '/api/tutor/chat/stream' : '/api/gemini/stream';
+      const headers = { 'Content-Type': 'application/json' };
+      if (jwtToken) {
+        headers['Authorization'] = `Bearer ${jwtToken}`;
+      }
+      
+      const res = await fetch(targetEndpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ system: systemPrompt, user: finalPrompt, maxOutputTokens: tokens, sessionId: sid, userId }),
+        headers,
+        body: JSON.stringify({ system: systemPrompt, user: finalPrompt, maxOutputTokens: tokens, sessionId: sid, userId, courseId: 'general' }),
       });
       if (!res.ok) {
         let errMsg = `HTTP ${res.status}`;
@@ -1320,6 +1625,36 @@ export default function CodingTutor() {
                   {err}
                 </div>
               )}
+              
+              {/* ── UPLOAD ERROR ── */}
+              {uploadErr && (
+                <div style={{ maxWidth: 720, marginBottom: 10, color: T.red, fontSize: 11, background: `${T.red}12`, padding: '8px 12px', borderRadius: 6, border: `1px solid ${T.red}20` }}>
+                  {uploadErr}
+                </div>
+              )}
+
+              {/* ── SESSION DOCUMENTS ── */}
+              {sessionDocs.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, maxWidth: msgMaxW }}>
+                  {sessionDocs.map(doc => (
+                    <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.s2, border: `1px solid ${T.border}`, padding: '4px 10px', borderRadius: 14, fontSize: 11 }}>
+                      <span style={{ color: T.muted }}>📄</span>
+                      <span style={{ color: T.text, fontWeight: 500 }}>{doc.name}</span>
+                      <span style={{ 
+                        fontSize: 9, 
+                        fontWeight: 700, 
+                        color: doc.status === 'completed' ? T.green : doc.status === 'failed' ? T.red : T.amber,
+                        textTransform: 'uppercase'
+                      }}>
+                        ({doc.status === 'pending_ingestion' ? 'processing' : doc.status})
+                      </span>
+                      <button onClick={() => handleDeleteDoc(doc.id)} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', padding: 0, marginLeft: 4 }}>
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* ── FOOTER: Mode/Depth selection + Text Input ── */}
@@ -1353,8 +1688,11 @@ export default function CodingTutor() {
 
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 8, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 14px', position: 'relative' }}>
-                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, padding: '2px', display: 'flex', alignItems: 'center' }}>
-                    <Paperclip size={16} />
+                  <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="application/pdf" style={{ display: 'none' }} />
+                  <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                    style={{ background: 'none', border: 'none', cursor: uploading ? 'not-allowed' : 'pointer', color: uploading ? T.purple : T.muted, padding: '2px', display: 'flex', alignItems: 'center' }}
+                    title="Upload PDF Context">
+                    {uploading ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Paperclip size={16} />}
                   </button>
 
                   {/* Autocomplete Dropdown popup */}
@@ -1413,11 +1751,18 @@ export default function CodingTutor() {
                   <textarea ref={inputRef} value={topic} onChange={e => {
                       const val = e.target.value;
                       setTopic(val);
-                      const match = val.match(/@(\w*)$/);
-                      if (match) {
-                        setMentionSearch(match[1]);
+                      const selectionStart = e.target.selectionStart;
+                      const textBeforeCursor = val.slice(0, selectionStart);
+                      const atIndex = textBeforeCursor.lastIndexOf('@');
+                      
+                      if (atIndex !== -1 && !textBeforeCursor.slice(atIndex).includes(' ')) {
+                        const query = textBeforeCursor.slice(atIndex + 1);
+                        setMentionSearch(query);
                         setShowMentionDropdown(true);
                         setSelectedMentionIndex(0);
+                        if (query === '') {
+                          fetchAvailableDocs();
+                        }
                       } else {
                         setShowMentionDropdown(false);
                       }

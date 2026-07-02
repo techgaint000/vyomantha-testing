@@ -60,6 +60,38 @@ permissions_to_grant = [
     # LMS Enrollment
     ("LMS Enrollment", "LMS Student", 1, 1, 1, 0),
     ("LMS Enrollment", "Guest", 1, 1, 1, 0),
+    
+    # LMS Batch
+    ("LMS Batch", "LMS Student", 1, 0, 0, 0),
+    ("LMS Batch", "Guest", 1, 0, 0, 0),
+    
+    # LMS Certificate
+    ("LMS Certificate", "LMS Student", 1, 0, 0, 0),
+    
+    # Job Opportunity
+    ("Job Opportunity", "LMS Student", 1, 0, 0, 0),
+    ("Job Opportunity", "Guest", 1, 0, 0, 0),
+    
+    # LMS Job Application
+    ("LMS Job Application", "LMS Student", 1, 1, 1, 0),
+    
+    # LMS Quiz
+    ("LMS Quiz", "LMS Student", 1, 0, 0, 0),
+    ("LMS Quiz", "Guest", 1, 0, 0, 0),
+    
+    # LMS Quiz Question
+    ("LMS Quiz Question", "LMS Student", 1, 0, 0, 0),
+    ("LMS Quiz Question", "Guest", 1, 0, 0, 0),
+    
+    # LMS Quiz Submission
+    ("LMS Quiz Submission", "LMS Student", 1, 1, 1, 0),
+    
+    # LMS Assignment
+    ("LMS Assignment", "LMS Student", 1, 0, 0, 0),
+    ("LMS Assignment", "Guest", 1, 0, 0, 0),
+    
+    # LMS Assignment Submission
+    ("LMS Assignment Submission", "LMS Student", 1, 1, 1, 0),
 ]
 
 for dt, role, r, w, c, d in permissions_to_grant:
@@ -103,6 +135,34 @@ for s in students:
     # Always set/update the password to ensure it matches 'student123'
     print(f"Setting password for {email} to 'student123'...")
     update_password(user=email, pwd="student123", logout_all_sessions=False)
+
+# Bootstrap administrator user 'admin@lms.com'
+admin_email = "admin@lms.com"
+if not frappe.db.exists("User", admin_email):
+    print(f"Creating administrator user {admin_email}...")
+    user = frappe.get_doc({
+        "doctype": "User",
+        "email": admin_email,
+        "first_name": "Admin",
+        "enabled": 1,
+        "send_welcome_email": 0
+    })
+    user.insert(ignore_permissions=True)
+    
+    for r in ["System Manager", "Instructor", "LMS Student"]:
+        if frappe.db.exists("Role", r):
+            user.add_roles(r)
+else:
+    # Ensure role permissions are updated even if the user exists
+    user = frappe.get_doc("User", admin_email)
+    for r in ["System Manager", "Instructor", "LMS Student"]:
+        if frappe.db.exists("Role", r) and r not in [ur.role for ur in user.roles]:
+            user.add_roles(r)
+    print(f"Administrator {admin_email} already exists, roles verified.")
+
+# Always set/update the admin password to ensure it matches 'admin123'
+print(f"Setting password for {admin_email} to 'admin123'...")
+update_password(user=admin_email, pwd="admin123", logout_all_sessions=False)
 
 # Seed Google Social Login Key
 try:
@@ -189,8 +249,39 @@ except Exception as e:
         frappe.log_error(title="Google Auth Diagnostics", message=tb_str)
         frappe.db.commit()
         print("Logged diagnostic failure to database successfully.")
-    except Exception as db_err:
-        print("Failed to log error to database:", db_err)
+    except Exception as log_err:
+        print("Failed to log diagnostic failure:", log_err)
+# Create Custom DocType 'LMS Session Document' programmatically so Frappe ORM registers it
+try:
+    if not frappe.db.exists("DocType", "LMS Session Document"):
+        print("Creating custom DocType 'LMS Session Document'...")
+        doc = frappe.get_doc({
+            "doctype": "DocType",
+            "name": "LMS Session Document",
+            "module": "LMS",
+            "custom": 1,
+            "autoname": "hash",
+            "fields": [
+                {"fieldname": "file_name", "label": "File Name", "fieldtype": "Data", "reqd": 1, "in_list_view": 1},
+                {"fieldname": "file_key", "label": "File Key", "fieldtype": "Data", "reqd": 1},
+                {"fieldname": "session_id", "label": "Session ID", "fieldtype": "Data", "reqd": 1, "in_list_view": 1},
+                {"fieldname": "course_id", "label": "Course ID", "fieldtype": "Data", "reqd": 1, "in_list_view": 1},
+                {"fieldname": "tenant_id", "label": "Tenant ID", "fieldtype": "Data", "reqd": 1, "in_list_view": 1},
+                {"fieldname": "status", "label": "Status", "fieldtype": "Select", "options": "pending_ingestion\nprocessing\ncompleted\nfailed", "default": "pending_ingestion", "reqd": 1, "in_list_view": 1}
+            ],
+            "permissions": [
+                {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+                {"role": "LMS Student", "read": 1, "write": 1, "create": 1},
+                {"role": "Instructor", "read": 1, "write": 1, "create": 1, "delete": 1}
+            ]
+        })
+        doc.insert(ignore_permissions=True)
+        print("DocType 'LMS Session Document' created successfully.")
+    else:
+        print("DocType 'LMS Session Document' already exists.")
+except Exception as doctype_err:
+    print(f"Failed to create 'LMS Session Document' DocType: {doctype_err}")
 
 frappe.db.commit()
 print("Students bootstrap completed successfully!")
+

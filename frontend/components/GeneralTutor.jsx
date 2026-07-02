@@ -67,6 +67,148 @@ export default function GeneralTutor() {
   const [voiceSessions, setVoiceSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [voiceSessionToRestore, setVoiceSessionToRestore] = useState(null);
+  
+  const [jwtToken, setJwtToken] = useState(null);
+  const [sessionDocs, setSessionDocs] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState('');
+  const fileInputRef = useRef(null);
+  const sessionDocsRef = useRef([]);
+  
+  useEffect(() => {
+    sessionDocsRef.current = sessionDocs;
+  }, [sessionDocs]);
+
+  const [showAtMenu, setShowAtMenu] = useState(false);
+  const [availableDocs, setAvailableDocs] = useState([]);
+  const [menuFilter, setMenuFilter] = useState('');
+  const [atMenuIndex, setAtMenuIndex] = useState(0);
+
+  const fetchAvailableDocs = useCallback(async () => {
+    if (!jwtToken) return;
+    try {
+      const res = await fetch('/api/documents/list', {
+        headers: {
+          'Authorization': `Bearer ${jwtToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableDocs(data.documents || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch available docs:", e);
+    }
+  }, [jwtToken]);
+
+  useEffect(() => {
+    if (jwtToken) {
+      fetchAvailableDocs();
+    }
+  }, [jwtToken, fetchAvailableDocs]);
+
+  const handleTextareaChange = (e) => {
+    const val = e.target.value;
+    setTopic(val);
+    
+    const selectionStart = e.target.selectionStart;
+    const textBeforeCursor = val.slice(0, selectionStart);
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+    
+    if (atIndex !== -1 && !textBeforeCursor.slice(atIndex).includes(' ')) {
+      const query = textBeforeCursor.slice(atIndex + 1);
+      setMenuFilter(query);
+      setShowAtMenu(true);
+      setAtMenuIndex(0);
+      if (query === '') {
+        fetchAvailableDocs();
+      }
+    } else {
+      setShowAtMenu(false);
+    }
+  };
+
+  const filteredDocs = useMemo(() => {
+    if (!menuFilter) return availableDocs;
+    return availableDocs.filter(d => d.name.toLowerCase().includes(menuFilter.toLowerCase()));
+  }, [availableDocs, menuFilter]);
+
+  const handleAttachDoc = async (doc) => {
+    const sid = currentSessionId || Date.now().toString(36);
+    if (!currentSessionId) setCurrentSessionId(sid);
+    
+    setUploading(true);
+    setUploadErr('');
+    setShowAtMenu(false);
+    
+    try {
+      const res = await fetch('/api/documents/attach', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwtToken}`
+        },
+        body: JSON.stringify({
+          file_name: doc.name,
+          file_key: doc.file_key,
+          sessionId: sid
+        })
+      });
+      
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Failed to attach document');
+      }
+      
+      const data = await res.json();
+      const newDoc = { id: data.documentId, name: doc.name, status: data.status };
+      
+      setSessionDocs(prev => {
+        const updated = [...prev, newDoc];
+        setTimeout(() => saveSession(messages, sid), 100);
+        return updated;
+      });
+      
+      if (inputRef.current) {
+        const val = topic;
+        const selectionStart = inputRef.current.selectionStart;
+        const textBeforeCursor = val.slice(0, selectionStart);
+        const atIndex = textBeforeCursor.lastIndexOf('@');
+        if (atIndex !== -1) {
+          const newVal = val.slice(0, atIndex) + val.slice(selectionStart);
+          setTopic(newVal);
+          setTimeout(() => {
+            inputRef.current.focus();
+            inputRef.current.selectionStart = atIndex;
+            inputRef.current.selectionEnd = atIndex;
+          }, 50);
+        }
+      }
+    } catch (e) {
+      console.error("Attach error:", e);
+      setUploadErr(e.message || 'Error attaching document');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  useEffect(() => {
+    const fetchJwt = async () => {
+      try {
+        const res = await fetch('/api/auth/jwt');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.token) {
+            setJwtToken(data.token);
+            console.warn("[GeneralTutor] Successfully retrieved JWT token.");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load JWT token:", e);
+      }
+    };
+    fetchJwt();
+  }, []);
   const chatRef = useRef(null);
   const inputRef = useRef(null);
   const textSessKey = 'general-tutor-sessions';
@@ -177,7 +319,8 @@ export default function GeneralTutor() {
     setMode(session.mode || 'Beginner');
     setLength(session.length || 'Short');
     setCurrentSessionId(session.id);
-    setErr(''); setTopic('');
+    setSessionDocs(session.documents || []);
+    setErr(''); setTopic(''); setUploadErr('');
   }, []);
 
   // Handle click outside to close open feature cards
@@ -202,8 +345,10 @@ export default function GeneralTutor() {
     const handleNew = () => {
       setMessages([]);
       setCurrentSessionId(null);
+      setSessionDocs([]);
       setTopic('');
       setErr('');
+      setUploadErr('');
       setShowVoiceAgent(false);
       setVoiceSessionToRestore(null);
     };
@@ -225,6 +370,7 @@ export default function GeneralTutor() {
     const session = {
       id: sid, label, topic: label, mode, length,
       messages: msgs,
+      documents: sessionDocsRef.current || [],
       timestamp: new Date().toISOString(),
     };
     const updated = [session, ...textSessions.filter(s => s.id !== sid)];
@@ -241,6 +387,168 @@ export default function GeneralTutor() {
   const FEATURE_LABELS = {
     quiz: 'Quiz', flashcards: 'Flashcards', infographic: 'Visual Summary',
     simpler: 'Simplified Explanation', examples: 'Examples',
+  };
+
+  const trackStatusStream = useCallback((docId, token) => {
+    const sseUrl = `/api/documents/status-stream?documentId=${docId}&token=${encodeURIComponent(token)}`;
+    const sse = new EventSource(sseUrl);
+    
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const status = data.status;
+        
+        setSessionDocs(prev => {
+          const updated = prev.map(d => d.id === docId ? { ...d, status } : d);
+          setTimeout(() => {
+            const raw = localStorage.getItem(textSessKey);
+            if (raw) {
+              const sessions = JSON.parse(raw);
+              const sid = currentSessionId || localStorage.getItem('current-general-tutor-session-id');
+              const sessIdx = sessions.findIndex(s => s.id === sid);
+              if (sessIdx !== -1) {
+                sessions[sessIdx].documents = updated;
+                localStorage.setItem(textSessKey, JSON.stringify(sessions));
+                setTextSessions(sessions);
+              }
+            }
+          }, 100);
+          return updated;
+        });
+        
+        if (status === 'completed' || status === 'failed') {
+          sse.close();
+        }
+      } catch (e) {
+        console.error("[SSE Status] Error parsing status event:", e);
+      }
+    };
+    
+    sse.onerror = () => {
+      sse.close();
+    };
+  }, [currentSessionId, textSessKey]);
+
+  useEffect(() => {
+    if (jwtToken && sessionDocs.length > 0) {
+      sessionDocs.forEach(d => {
+        if (d.status === 'pending_ingestion' || d.status === 'processing') {
+          trackStatusStream(d.id, jwtToken);
+        }
+      });
+    }
+  }, [jwtToken, sessionDocs.length]);
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
+      setUploadErr('Only PDF files are allowed.');
+      return;
+    }
+    
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadErr('File size cannot exceed 10MB.');
+      return;
+    }
+    
+    setUploading(true);
+    setUploadErr('');
+    
+    const sid = currentSessionId || Date.now().toString(36);
+    if (!currentSessionId) setCurrentSessionId(sid);
+    
+    try {
+      let token = jwtToken;
+      if (!token) {
+        const jwtRes = await fetch('/api/auth/jwt');
+        if (jwtRes.ok) {
+          const jwtData = await jwtRes.json();
+          token = jwtData.token;
+          setJwtToken(token);
+        }
+      }
+      
+      if (!token) {
+        throw new Error("Unable to obtain authenticated token. Please refresh.");
+      }
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('sessionId', sid);
+      formData.append('courseId', 'general');
+      
+      const res = await fetch('/api/documents/upload', {
+         method: 'POST',
+         headers: {
+           'Authorization': `Bearer ${token}`
+         },
+         body: formData
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to upload document.');
+      }
+      
+      const data = await res.json();
+      const newDoc = { id: data.documentId, name: file.name, status: data.status };
+      
+      setSessionDocs(prev => {
+        const updated = [...prev, newDoc];
+        setTimeout(() => saveSession(messages, sid), 100);
+        return updated;
+      });
+      
+      trackStatusStream(data.documentId, token);
+    } catch (err) {
+      console.error("Upload error:", err);
+      setUploadErr(err.message || 'Error uploading document.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteDoc = async (docId) => {
+    const sid = currentSessionId;
+    if (!sid) return;
+    
+    try {
+      let token = jwtToken;
+      if (!token) {
+        const jwtRes = await fetch('/api/auth/jwt');
+        if (jwtRes.ok) {
+          const jwtData = await jwtRes.json();
+          token = jwtData.token;
+          setJwtToken(token);
+        }
+      }
+      
+      const res = await fetch('/api/documents/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ documentId: docId, sessionId: sid })
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete document.');
+      }
+      
+      setSessionDocs(prev => {
+        const updated = prev.filter(d => d.id !== docId);
+        setTimeout(() => saveSession(messages, sid), 100);
+        return updated;
+      });
+    } catch (err) {
+      console.error("Delete error:", err);
+      setUploadErr(err.message || 'Error deleting document.');
+    }
   };
 
   const handleSend = async () => {
@@ -311,10 +619,16 @@ export default function GeneralTutor() {
     try {
       const tokens = MAX_TOKENS[length.toLowerCase()] || 800;
       const prompt = buildChatPrompt(raw, mode, length);
-      const res = await fetch('/api/gemini/stream', {
+      const targetEndpoint = jwtToken ? '/api/tutor/chat/stream' : '/api/gemini/stream';
+      const headers = { 'Content-Type': 'application/json' };
+      if (jwtToken) {
+        headers['Authorization'] = `Bearer ${jwtToken}`;
+      }
+      
+      const res = await fetch(targetEndpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ system: TUTOR_SYSTEM, user: prompt, maxOutputTokens: tokens, sessionId: sid, userId }),
+        headers,
+        body: JSON.stringify({ system: TUTOR_SYSTEM, user: prompt, maxOutputTokens: tokens, sessionId: sid, userId, courseId: 'general' }),
       });
       if (!res.ok) {
         let errMsg = `HTTP ${res.status}`;
@@ -543,6 +857,29 @@ export default function GeneralTutor() {
   };
 
   const handleKeyDown = (e) => {
+    if (showAtMenu && filteredDocs.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAtMenuIndex(prev => (prev + 1) % filteredDocs.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAtMenuIndex(prev => (prev - 1 + filteredDocs.length) % filteredDocs.length);
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAttachDoc(filteredDocs[atMenuIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowAtMenu(false);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -868,6 +1205,36 @@ export default function GeneralTutor() {
               {err}
             </div>
           )}
+          
+          {/* ── UPLOAD ERROR ── */}
+          {uploadErr && (
+            <div style={{ maxWidth: 720, marginBottom: 10, color: T.red, fontSize: 11, background: `${T.red}12`, padding: '8px 12px', borderRadius: 6, border: `1px solid ${T.red}20` }}>
+              {uploadErr}
+            </div>
+          )}
+
+          {/* ── SESSION DOCUMENTS ── */}
+          {sessionDocs.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, maxWidth: msgMaxW }}>
+              {sessionDocs.map(doc => (
+                <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.s2, border: `1px solid ${T.border}`, padding: '4px 10px', borderRadius: 14, fontSize: 11 }}>
+                  <span style={{ color: T.muted }}>📄</span>
+                  <span style={{ color: T.text, fontWeight: 500 }}>{doc.name}</span>
+                  <span style={{ 
+                    fontSize: 9, 
+                    fontWeight: 700, 
+                    color: doc.status === 'completed' ? T.green : doc.status === 'failed' ? T.red : T.amber,
+                    textTransform: 'uppercase'
+                  }}>
+                    ({doc.status === 'pending_ingestion' ? 'processing' : doc.status})
+                  </span>
+                  <button onClick={() => handleDeleteDoc(doc.id)} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', padding: 0, marginLeft: 4 }}>
+                    &times;
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ── BOTTOM: Mode/Depth selects + Input ── */}
@@ -899,15 +1266,61 @@ export default function GeneralTutor() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 8, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 14px' }}>
-              <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, padding: '2px', display: 'flex', alignItems: 'center' }}>
-                <Paperclip size={16} />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 8, background: T.s2, border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 14px', position: 'relative' }}>
+              {showAtMenu && filteredDocs.length > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: 'calc(100% + 8px)',
+                  left: 0,
+                  right: 0,
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  background: T.s2,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 10,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  zIndex: 100,
+                  padding: '6px 0',
+                  textAlign: 'left'
+                }}>
+                  <div style={{ padding: '4px 12px', fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: '0.05em', borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
+                    CHOOSE PDF TO ATTACH
+                  </div>
+                  {filteredDocs.map((doc, idx) => (
+                    <div
+                      key={doc.id}
+                      onClick={() => handleAttachDoc(doc)}
+                      onMouseEnter={() => setAtMenuIndex(idx)}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        color: T.text,
+                        cursor: 'pointer',
+                        background: idx === atMenuIndex ? `${T.purple}15` : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        transition: 'background 0.1s'
+                      }}
+                    >
+                      <span>📄</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
+                      <span style={{ fontSize: 10, color: T.muted }}>({new Date(doc.creation).toLocaleDateString()})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="application/pdf" style={{ display: 'none' }} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                style={{ background: 'none', border: 'none', cursor: uploading ? 'not-allowed' : 'pointer', color: uploading ? T.purple : T.muted, padding: '2px', display: 'flex', alignItems: 'center' }}
+                title="Upload PDF Context">
+                {uploading ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Paperclip size={16} />}
               </button>
               <button onClick={() => setShowVoiceAgent(true)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.muted, padding: '2px', display: 'flex', alignItems: 'center' }} title="Open Voice Tutor">
                 <Mic size={16} />
               </button>
-              <textarea ref={inputRef} value={topic} onChange={e => setTopic(e.target.value)}
+              <textarea ref={inputRef} value={topic} onChange={handleTextareaChange}
                 placeholder="Type your message to the AI Tutor\u2026" rows={1}
                 onKeyDown={handleKeyDown}
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: T.text, fontSize: 14, lineHeight: 1.6, resize: 'none', fontFamily: 'inherit', padding: 0, minHeight: 22, maxHeight: 120 }} />
