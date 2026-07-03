@@ -1679,6 +1679,17 @@ except Exception as e:
         }
         .tab-pane .md-content li {
           margin-bottom: 6px !important;
+          color: #DDE3F2 !important;
+        }
+        .tab-pane .md-content h1,
+        .tab-pane .md-content h2,
+        .tab-pane .md-content h3,
+        .tab-pane .md-content h4,
+        .tab-pane .md-content h5 {
+          color: #FFFFFF !important;
+          margin-top: 16px !important;
+          margin-bottom: 8px !important;
+          font-weight: 700 !important;
         }
       `}</style>
     </div>
