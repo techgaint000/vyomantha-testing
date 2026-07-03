@@ -83,32 +83,88 @@ export default function Playground({
   const playIntervalRef = useRef(null);
   const editorViewRef = useRef(null);
   const editorPanelRef = useRef(null);
-  const [panelHeight, setPanelHeight] = useState(250);
-  const isDraggingPanelRef = useRef(false);
+  const [mainSplitPercent, setMainSplitPercent] = useState(50); // Left vs Right width percentage
+  const [leftSplitPercent, setLeftSplitPercent] = useState(60); // Left Column: Editor height percentage
+  const [rightSplitPercent, setRightSplitPercent] = useState(codingExercise?.hasExercise ? 58 : 100); // Right Column: Visualizer height percentage
+  
+  const isDraggingMainRef = useRef(false);
+  const isDraggingLeftRef = useRef(false);
+  const isDraggingRightRef = useRef(false);
+  const containerRef = useRef(null); // Ref to the outer main split area container
 
-  const handlePanelMouseDown = (e) => {
+  const handleMainMouseDown = (e) => {
     e.preventDefault();
-    isDraggingPanelRef.current = true;
-    document.addEventListener('mousemove', handlePanelMouseMove);
-    document.addEventListener('mouseup', handlePanelMouseUp);
+    isDraggingMainRef.current = true;
+    document.addEventListener('mousemove', handleMainMouseMove);
+    document.addEventListener('mouseup', handleMainMouseUp);
   };
 
-  const handlePanelMouseMove = (e) => {
-    if (!isDraggingPanelRef.current) return;
-    const container = editorPanelRef.current;
+  const handleMainMouseMove = (e) => {
+    if (!isDraggingMainRef.current) return;
+    const container = containerRef.current;
     if (container) {
       const rect = container.getBoundingClientRect();
-      let newHeight = rect.bottom - e.clientY - 36;
-      if (newHeight < 80) newHeight = 80;
-      if (newHeight > rect.height - 150) newHeight = rect.height - 150;
-      setPanelHeight(newHeight);
+      let percent = ((e.clientX - rect.left) / rect.width) * 100;
+      if (percent < 25) percent = 25;
+      if (percent > 75) percent = 75;
+      setMainSplitPercent(percent);
     }
   };
 
-  const handlePanelMouseUp = () => {
-    isDraggingPanelRef.current = false;
-    document.removeEventListener('mousemove', handlePanelMouseMove);
-    document.removeEventListener('mouseup', handlePanelMouseUp);
+  const handleMainMouseUp = () => {
+    isDraggingMainRef.current = false;
+    document.removeEventListener('mousemove', handleMainMouseMove);
+    document.removeEventListener('mouseup', handleMainMouseUp);
+  };
+
+  const handleLeftMouseDown = (e) => {
+    e.preventDefault();
+    isDraggingLeftRef.current = true;
+    document.addEventListener('mousemove', handleLeftMouseMove);
+    document.addEventListener('mouseup', handleLeftMouseUp);
+  };
+
+  const handleLeftMouseMove = (e) => {
+    if (!isDraggingLeftRef.current) return;
+    const container = containerRef.current;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      let percent = ((e.clientY - rect.top) / rect.height) * 100;
+      if (percent < 15) percent = 15;
+      if (percent > 85) percent = 85;
+      setLeftSplitPercent(percent);
+    }
+  };
+
+  const handleLeftMouseUp = () => {
+    isDraggingLeftRef.current = false;
+    document.removeEventListener('mousemove', handleLeftMouseMove);
+    document.removeEventListener('mouseup', handleLeftMouseUp);
+  };
+
+  const handleRightMouseDown = (e) => {
+    e.preventDefault();
+    isDraggingRightRef.current = true;
+    document.addEventListener('mousemove', handleRightMouseMove);
+    document.addEventListener('mouseup', handleRightMouseUp);
+  };
+
+  const handleRightMouseMove = (e) => {
+    if (!isDraggingRightRef.current) return;
+    const container = containerRef.current;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      let percent = ((e.clientY - rect.top) / rect.height) * 100;
+      if (percent < 15) percent = 15;
+      if (percent > 100) percent = 100;
+      setRightSplitPercent(percent);
+    }
+  };
+
+  const handleRightMouseUp = () => {
+    isDraggingRightRef.current = false;
+    document.removeEventListener('mousemove', handleRightMouseMove);
+    document.removeEventListener('mouseup', handleRightMouseUp);
   };
 
   useEffect(() => {
@@ -116,8 +172,12 @@ export default function Playground({
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => {
-      document.removeEventListener('mousemove', handlePanelMouseMove);
-      document.removeEventListener('mouseup', handlePanelMouseUp);
+      document.removeEventListener('mousemove', handleMainMouseMove);
+      document.removeEventListener('mouseup', handleMainMouseUp);
+      document.removeEventListener('mousemove', handleLeftMouseMove);
+      document.removeEventListener('mouseup', handleLeftMouseUp);
+      document.removeEventListener('mousemove', handleRightMouseMove);
+      document.removeEventListener('mouseup', handleRightMouseUp);
       window.removeEventListener('resize', checkMobile);
     };
   }, []);
@@ -427,6 +487,17 @@ export default function Playground({
       setExplanation('⚠️ Failed to generate tutor response for this code.');
     } finally {
       setIsGeneratingExplanation(false);
+    }
+  };
+
+  const handleTabClick = (tab) => {
+    if (activeTab === tab && rightSplitPercent < 100) {
+      setRightSplitPercent(100);
+    } else {
+      setActiveTab(tab);
+      if (rightSplitPercent > 85) {
+        setRightSplitPercent(58);
+      }
     }
   };
 
@@ -1002,20 +1073,19 @@ except Exception as e:
       </div>
 
       {/* Main Split Area */}
-      <div style={{ display: 'flex', flex: 1, height: 'calc(100% - 48px)', overflow: 'hidden', flexDirection: isMobile ? 'column' : 'row' }}>
+      <div ref={containerRef} style={{ display: 'flex', flex: 1, height: 'calc(100% - 48px)', overflow: 'hidden', flexDirection: isMobile ? 'column' : 'row' }}>
         
         {/* LEFT COLUMN: Code Editor & Console Terminal */}
         <div style={{
-          width: isMobile ? '100%' : '50%',
+          width: isMobile ? '100%' : `${mainSplitPercent}%`,
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          borderRight: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
           background: '#06080C',
           overflow: 'hidden'
         }}>
           {/* Top Half: Code Editor */}
-          <div style={{ flex: 1, minHeight: '180px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ height: isMobile ? '55%' : `${leftSplitPercent}%`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', background: '#080A0E', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <span style={{ fontSize: 10.5, color: '#8892B0', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Source Code Editor</span>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -1053,8 +1123,30 @@ except Exception as e:
             </div>
           </div>
 
+          {/* Left Column Vertical Resizer Handle */}
+          {!isMobile && (
+            <div
+              onMouseDown={handleLeftMouseDown}
+              style={{
+                height: 6,
+                cursor: 'row-resize',
+                background: isDraggingLeftRef.current ? 'rgba(91, 140, 248, 0.4)' : 'rgba(255, 255, 255, 0.08)',
+                zIndex: 10,
+                width: '100%',
+                flexShrink: 0,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(91, 140, 248, 0.3)'}
+              onMouseLeave={e => {
+                if (!isDraggingLeftRef.current) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                }
+              }}
+            />
+          )}
+
           {/* Bottom Half: Console Terminal */}
-          <div style={{ height: '40%', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', flexDirection: 'column', background: '#040508', overflow: 'hidden' }}>
+          <div style={{ height: isMobile ? '45%' : `${100 - leftSplitPercent}%`, display: 'flex', flexDirection: 'column', background: '#040508', overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', background: '#080A0E', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <span style={{ fontSize: 10.5, color: '#8892B0', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Output Console</span>
               <button
@@ -1085,9 +1177,31 @@ except Exception as e:
           </div>
         </div>
 
+        {/* Main Horizontal Split Resizer Handle */}
+        {!isMobile && (
+          <div
+            onMouseDown={handleMainMouseDown}
+            style={{
+              width: 6,
+              cursor: 'col-resize',
+              background: isDraggingMainRef.current ? 'rgba(91, 140, 248, 0.4)' : 'rgba(255, 255, 255, 0.08)',
+              zIndex: 10,
+              alignSelf: 'stretch',
+              transition: 'background 0.2s',
+              flexShrink: 0
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(91, 140, 248, 0.3)'}
+            onMouseLeave={e => {
+              if (!isDraggingMainRef.current) {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              }
+            }}
+          />
+        )}
+
         {/* RIGHT COLUMN: Visualizer & Explanation Pane */}
         <div style={{
-          width: isMobile ? '100%' : '50%',
+          width: isMobile ? '100%' : `${100 - mainSplitPercent}%`,
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
@@ -1095,7 +1209,14 @@ except Exception as e:
           overflow: 'hidden'
         }}>
           {/* Top Half: Visualizer panel */}
-          <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', overflow: 'hidden' }}>
+          <div style={{
+            height: rightSplitPercent === 100 ? 'calc(100% - 36px)' : `${rightSplitPercent}%`,
+            display: 'flex',
+            flexDirection: 'column',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            overflow: 'hidden',
+            flexShrink: 0
+          }}>
             {/* Visualizer header controls */}
             <div style={{
               padding: '10px 14px',
@@ -1176,7 +1297,7 @@ except Exception as e:
                           color: currentStep === traceData.length - 1 ? '#4A5568' : '#F8FAFC',
                           padding: 5,
                           borderRadius: 4,
-                          cursor: currentStep === traceData.length - 1 ? 'not-allowed' : 'pointer',
+                          cursor: currentStep === 0 ? 'not-allowed' : 'pointer',
                           display: 'flex',
                           alignItems: 'center'
                         }}
@@ -1252,18 +1373,76 @@ except Exception as e:
             </div>
           </div>
 
+          {/* Right Column Vertical Resizer Handle */}
+          {!isMobile && (
+            <div
+              onMouseDown={handleRightMouseDown}
+              style={{
+                height: 6,
+                cursor: 'row-resize',
+                background: isDraggingRightRef.current ? 'rgba(245, 169, 91, 0.4)' : 'rgba(255, 255, 255, 0.08)',
+                zIndex: 10,
+                width: '100%',
+                flexShrink: 0,
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(245, 169, 91, 0.3)'}
+              onMouseLeave={e => {
+                if (!isDraggingRightRef.current) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                }
+              }}
+            />
+          )}
+
           {/* Bottom Half: Explanation and Tutor features */}
-          <div style={{ height: '42%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#040508' }}>
+          <div style={{
+            height: rightSplitPercent === 100 ? '36px' : `${100 - rightSplitPercent}%`,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            background: '#040508',
+            flexShrink: 0
+          }}>
             {/* Tab Selection Header */}
-            {codingExercise?.hasExercise ? (
-              <div style={{ display: 'flex', background: '#080A0E', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', height: 36, flexShrink: 0, padding: '0 10px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: '#080A0E',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              height: 36,
+              flexShrink: 0,
+              padding: '0 10px',
+              width: '100%'
+            }}>
+              <button
+                onClick={() => handleTabClick('explanation')}
+                style={{
+                  background: activeTab === 'explanation' && rightSplitPercent < 100 ? 'rgba(34, 197, 160, 0.08)' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'explanation' && rightSplitPercent < 100 ? `2px solid #22C5A0` : 'none',
+                  color: activeTab === 'explanation' && rightSplitPercent < 100 ? '#22C5A0' : '#8892B0',
+                  padding: '6px 16px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                  transition: 'all 0.15s'
+                }}
+              >
+                Tutor Explanation
+              </button>
+              {codingExercise?.hasExercise && (
                 <button
-                  onClick={() => setActiveTab('explanation')}
+                  onClick={() => handleTabClick('instructions')}
                   style={{
-                    background: activeTab === 'explanation' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
+                    background: activeTab === 'instructions' && rightSplitPercent < 100 ? 'rgba(155, 110, 248, 0.08)' : 'transparent',
                     border: 'none',
-                    borderBottom: activeTab === 'explanation' ? `2px solid #22C5A0` : 'none',
-                    color: activeTab === 'explanation' ? '#F8FAFC' : '#8892B0',
+                    borderBottom: activeTab === 'instructions' && rightSplitPercent < 100 ? `2px solid #9B6EF8` : 'none',
+                    color: activeTab === 'instructions' && rightSplitPercent < 100 ? '#9B6EF8' : '#8892B0',
                     padding: '6px 16px',
                     fontSize: 11,
                     fontWeight: 700,
@@ -1271,39 +1450,45 @@ except Exception as e:
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                     fontFamily: 'inherit',
-                    outline: 'none'
-                  }}
-                >
-                  Tutor Explanation
-                </button>
-                <button
-                  onClick={() => setActiveTab('instructions')}
-                  style={{
-                    background: activeTab === 'instructions' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-                    border: 'none',
-                    borderBottom: activeTab === 'instructions' ? `2px solid #9B6EF8` : 'none',
-                    color: activeTab === 'instructions' ? '#F8FAFC' : '#8892B0',
-                    padding: '6px 16px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    fontFamily: 'inherit',
-                    outline: 'none'
+                    outline: 'none',
+                    transition: 'all 0.15s'
                   }}
                 >
                   Instructions & Test Cases
                 </button>
-              </div>
-            ) : (
-              <div style={{ padding: '8px 14px', background: '#080A0E', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                <span style={{ fontSize: 10.5, color: '#8892B0', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Tutor Explanation</span>
-              </div>
-            )}
+              )}
+              
+              {/* Collapse Button */}
+              {rightSplitPercent < 100 && (
+                <button
+                  onClick={() => setRightSplitPercent(100)}
+                  title="Collapse Explanation Pane"
+                  style={{
+                    marginLeft: 'auto',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#647298',
+                    cursor: 'pointer',
+                    padding: '6px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    transition: 'color 0.15s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = '#F55B6B'}
+                  onMouseLeave={e => e.currentTarget.style.color = '#647298'}
+                >
+                  ✕ Collapse
+                </button>
+              )}
+            </div>
 
             {/* Content scroll area */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: 14 }} className="sandbox-scroll">
+            <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: rightSplitPercent === 100 ? 'none' : 'block' }} className="sandbox-scroll">
               {/* Tab 1: Explanation tab */}
               {(!codingExercise?.hasExercise || activeTab === 'explanation') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
