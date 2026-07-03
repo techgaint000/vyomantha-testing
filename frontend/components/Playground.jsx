@@ -11,6 +11,7 @@ import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { T, BUG_ANALYSIS_SYSTEM, BUG_TIPS_SYSTEM, BUG_FIX_METHODS_SYSTEM, FIX_EXPLANATION_SYSTEM, SOCRATIC_HELP_SYSTEM } from '@/lib/lms-data';
 
 export default function Playground({
   initialCode = '# Write your Python code here\nprint("Hello World!")\n',
@@ -74,6 +75,7 @@ export default function Playground({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isTracing, setIsTracing] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(1500); // 1500ms (1x), 1000ms (1.5x), 500ms (2x)
+  const [selectedTutorAction, setSelectedTutorAction] = useState('default');
 
   const terminalElRef = useRef(null);
   const terminalInstanceRef = useRef(null);
@@ -362,13 +364,32 @@ export default function Playground({
     };
   }, []);
 
-  const generateExplanationForCode = async (codeText) => {
+  const generateExplanationForCode = async (codeText, actionType = 'default') => {
     if (!codeText || !codeText.trim()) return;
     setIsGeneratingExplanation(true);
-    setExplanation('Generating explanation...');
+    setExplanation('Generating response...');
     try {
-      const systemPrompt = "You are an expert Python tutor. Explain the following Python code step-by-step. Keep your explanation concise, clear, and focused on how the code executes, data structures, and algorithms used. Do not include greetings. Use markdown.";
-      const finalPrompt = `Please explain this Python code:\n\`\`\`python\n${codeText}\n\`\`\``;
+      let systemPrompt = "You are an expert Python tutor. Explain the following Python code step-by-step. Keep your explanation concise, clear, and focused on how the code executes, data structures, and algorithms used. Do not include greetings. Use markdown.";
+      let promptPrefix = "Please explain this Python code:\n";
+      
+      if (actionType === 'analyze') {
+        systemPrompt = BUG_ANALYSIS_SYSTEM;
+        promptPrefix = "Please analyze the bugs and time/space complexity of this Python code:\n";
+      } else if (actionType === 'tips') {
+        systemPrompt = BUG_TIPS_SYSTEM;
+        promptPrefix = "Please provide hints and correction tips (without direct solution code) for this Python code:\n";
+      } else if (actionType === 'fix') {
+        systemPrompt = BUG_FIX_METHODS_SYSTEM;
+        promptPrefix = "Please detail the fixing strategies and algorithms to resolve bugs in this Python code:\n";
+      } else if (actionType === 'explain') {
+        systemPrompt = FIX_EXPLANATION_SYSTEM;
+        promptPrefix = "Please provide a theoretical explanation of how/why this Python code works:\n";
+      } else if (actionType === 'help') {
+        systemPrompt = SOCRATIC_HELP_SYSTEM;
+        promptPrefix = "Please provide a Socratic guide helping me fix this Python code:\n";
+      }
+
+      const finalPrompt = `${promptPrefix}\`\`\`python\n${codeText}\n\`\`\``;
 
       let storedUserId = '';
       if (typeof window !== 'undefined') {
@@ -387,7 +408,7 @@ export default function Playground({
       });
 
       if (!res.ok) {
-        throw new Error('Failed to generate explanation');
+        throw new Error('Failed to generate response');
       }
 
       const reader = res.body.getReader();
@@ -403,7 +424,7 @@ export default function Playground({
       }
     } catch (e) {
       console.error(e);
-      setExplanation('⚠️ Failed to generate explanation for this code.');
+      setExplanation('⚠️ Failed to generate tutor response for this code.');
     } finally {
       setIsGeneratingExplanation(false);
     }
@@ -420,7 +441,7 @@ export default function Playground({
     }
 
     // Start generating AI explanation in the background
-    generateExplanationForCode(code);
+    generateExplanationForCode(code, selectedTutorAction);
 
     // Setup tracing visualizer state to loading
     setIsTracing(true);
@@ -1401,7 +1422,8 @@ except Exception as e:
 
                 {/* Explanation Tab Content */}
                 <div className="tab-pane sandbox-scroll" style={{
-                  display: activeTab === 'explanation' ? 'block' : 'none',
+                  display: activeTab === 'explanation' ? 'flex' : 'none',
+                  flexDirection: 'column',
                   width: '100%',
                   height: '100%',
                   padding: 16,
@@ -1409,25 +1431,70 @@ except Exception as e:
                   background: '#040508',
                   color: '#F8FAFC'
                 }}>
-                  {!explanation && !isGeneratingExplanation ? (
-                    <div style={{ display: 'flex', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', textAlign: 'center', color: '#8892B0', gap: 8 }}>
-                      <BookOpen size={24} color="#22C5A0" />
-                      <span style={{ fontSize: 13, maxWidth: 360 }}>
-                        No active explanation loaded. Run your code to generate explanation or trace details.
-                      </span>
-                    </div>
-                  ) : isGeneratingExplanation && !explanation ? (
-                    <div style={{ display: 'flex', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#8892B0' }}>
-                      <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} color="#22C5A0" />
-                      <span style={{ fontSize: 13 }}>Generating step-by-step code explanation...</span>
-                    </div>
-                  ) : (
-                    <div className="md-content" style={{ fontSize: 14, lineHeight: 1.7 }}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {explanation}
-                      </ReactMarkdown>
-                    </div>
-                  )}
+                  {/* Tutor Command Options Dropdown */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    marginBottom: 16,
+                    padding: '8px 12px',
+                    background: '#090A0F',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    borderRadius: 8,
+                    flexShrink: 0
+                  }}>
+                    <span style={{ fontSize: 11.5, color: '#8892B0', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Tutor Action:</span>
+                    <select
+                      value={selectedTutorAction}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedTutorAction(val);
+                        generateExplanationForCode(code, val);
+                      }}
+                      style={{
+                        background: '#131824',
+                        color: '#F8FAFC',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: 6,
+                        padding: '5px 10px',
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        outline: 'none',
+                        flex: 1,
+                        maxWidth: 240
+                      }}
+                    >
+                      <option value="default">📖 Standard Code Explanation</option>
+                      <option value="analyze">🔍 Code Analysis & Complexity</option>
+                      <option value="tips">💡 Bug Correction Tips</option>
+                      <option value="fix">🛠️ Bug Fixing Methods</option>
+                      <option value="explain">📖 Why It Works</option>
+                    </select>
+                  </div>
+
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {!explanation && !isGeneratingExplanation ? (
+                      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 0', textAlign: 'center', color: '#8892B0', gap: 8 }}>
+                        <BookOpen size={24} color="#22C5A0" />
+                        <span style={{ fontSize: 13, maxWidth: 360 }}>
+                          Select an action from the dropdown or click Run to trigger explanation features.
+                        </span>
+                      </div>
+                    ) : isGeneratingExplanation && !explanation ? (
+                      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#8892B0', padding: '24px 0' }}>
+                        <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} color="#22C5A0" />
+                        <span style={{ fontSize: 13 }}>Generating tutor response...</span>
+                      </div>
+                    ) : (
+                      <div className="md-content" style={{ fontSize: 14, lineHeight: 1.7, flex: 1 }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {explanation}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Console Clear Button (when Console tab is active) */}

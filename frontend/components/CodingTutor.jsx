@@ -1418,71 +1418,10 @@ export default function CodingTutor() {
                   </button>
 
                   {/* Autocomplete Dropdown popup */}
-                  {showMentionDropdown && filteredMentions.length > 0 && (
-                    <div style={{
-                      position: 'absolute',
-                      bottom: 'calc(100% + 8px)',
-                      left: 0,
-                      right: 0,
-                      background: T.s3,
-                      border: `1px solid ${T.border}`,
-                      borderRadius: 12,
-                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4)',
-                      maxHeight: 220,
-                      overflowY: 'auto',
-                      zIndex: 100,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      padding: '6px 0'
-                    }}>
-                      <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: '0.05em', padding: '6px 14px 4px', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
-                        Coding Tutor Commands
-                      </div>
-                      {filteredMentions.map((opt, idx) => {
-                        const isSelected = idx === selectedMentionIndex;
-                        return (
-                          <div
-                            key={opt.id}
-                            onClick={() => handleSelectMention(opt)}
-                            onMouseEnter={() => setSelectedMentionIndex(idx)}
-                            style={{
-                              padding: '8px 14px',
-                              background: isSelected ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-                              borderLeft: `3px solid ${isSelected ? opt.color : 'transparent'}`,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 12,
-                              transition: 'all 0.15s'
-                            }}
-                          >
-                            <span style={{ fontSize: 16 }}>{opt.icon}</span>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 700, color: opt.color, fontSize: 12.5 }}>@{opt.name}</span>
-                                <span style={{ fontWeight: 600, color: T.text, fontSize: 12 }}>{opt.label}</span>
-                              </div>
-                              <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{opt.desc}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <textarea ref={inputRef} value={topic} onChange={e => {
-                      const val = e.target.value;
-                      setTopic(val);
-                      const match = val.match(/@(\w*)$/);
-                      if (match) {
-                        setMentionSearch(match[1]);
-                        setShowMentionDropdown(true);
-                        setSelectedMentionIndex(0);
-                      } else {
-                        setShowMentionDropdown(false);
-                      }
+                   <textarea ref={inputRef} value={topic} onChange={e => {
+                      setTopic(e.target.value);
                     }}
-                    placeholder="Ask Coding Tutor (type @ for commands)..." rows={1}
+                    placeholder="Ask Coding Tutor..." rows={1}
                     onKeyDown={handleKeyDown}
                     style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: T.text, fontSize: 14, lineHeight: 1.6, resize: 'none', fontFamily: 'inherit', padding: 0, minHeight: 22, maxHeight: 120 }} />
                 </div>
