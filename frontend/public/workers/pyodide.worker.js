@@ -124,7 +124,7 @@ def trace_code(code_string):
                 })
         return trace_lines
 
-    globals_dict = {}
+    globals_dict = {"__name__": "__main__"}
     locals_dict = {}
     
     sys.settrace(trace_lines)
