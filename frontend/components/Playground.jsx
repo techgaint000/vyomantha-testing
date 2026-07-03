@@ -32,7 +32,7 @@ export default function Playground({
   const [activeTab, setActiveTab] = useState('console');
   const [explanation, setExplanation] = useState('');
   const [isGeneratingExplanation, setIsGeneratingExplanation] = useState(false);
-  const pendingTraceRef = useRef(null);
+  const [pendingTraceCode, setPendingTraceCode] = useState(null);
   const [assertionResults, setAssertionResults] = useState([]);
   const [verifyState, setVerifyState] = useState('idle'); // 'idle' | 'verifying' | 'success' | 'failed'
   const [traceError, setTraceError] = useState(null);
@@ -225,14 +225,14 @@ export default function Playground({
 
   // Trigger trace runner once Pyodide is ready and console execution is finished
   useEffect(() => {
-    if (isReady && !isRunning && pendingTraceRef.current !== null) {
-      const codeToTrace = pendingTraceRef.current;
-      pendingTraceRef.current = null;
+    if (isReady && !isRunning && pendingTraceCode !== null) {
+      const codeToTrace = pendingTraceCode;
+      setPendingTraceCode(null);
       setIsTracing(true);
       setTraceError(null);
       runTrace(codeToTrace);
     }
-  }, [isReady, isRunning, runTrace]);
+  }, [isReady, isRunning, pendingTraceCode, runTrace]);
 
   // Handle parent code overrides
   useEffect(() => {
@@ -242,15 +242,9 @@ export default function Playground({
       setIsTracing(true);
       setTraceData(null);
       setTraceError(null);
-      
-      if (isReady && !isRunning) {
-        pendingTraceRef.current = null;
-        runTrace(codeOverride);
-      } else {
-        pendingTraceRef.current = codeOverride;
-      }
+      setPendingTraceCode(codeOverride);
     }
-  }, [codeOverride, isReady, isRunning, runTrace]);
+  }, [codeOverride]);
 
   // Auto-play interval
   useEffect(() => {
@@ -433,7 +427,7 @@ export default function Playground({
     setTraceError(null);
     
     // Queue trace execution for when runCode finishes
-    pendingTraceRef.current = code;
+    setPendingTraceCode(code);
 
     // Execute code in Console
     runCode(code);

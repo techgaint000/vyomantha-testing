@@ -269,8 +269,7 @@ export default function CodingTutor() {
                       theme="dark"
                       className="tutor-code-block"
                       extensions={[python()]}
-                      readOnly
-                      editable={false}
+                      readOnly={true}
                       basicSetup={{
                         lineNumbers: false,
                         foldGutter: false,
@@ -466,7 +465,10 @@ export default function CodingTutor() {
       if (e.target.closest('[data-feature-container="true"]') || e.target.closest('[data-feature-button="true"]')) {
         return;
       }
-      setMessages(prev => prev.map(m => m.activeFeature ? { ...m, activeFeature: null } : m));
+      setMessages(prev => {
+        if (!prev.some(m => m.activeFeature)) return prev;
+        return prev.map(m => m.activeFeature ? { ...m, activeFeature: null } : m);
+      });
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
