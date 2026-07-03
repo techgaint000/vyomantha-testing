@@ -300,7 +300,8 @@ def get_jwt():
         "exp": int(time.time()) + 3600
     }
     
-    secret_key = frappe.local.conf.encryption_key or "default_secret"
+    import os
+    secret_key = os.environ.get("JWT_SECRET") or frappe.local.conf.encryption_key or "default_secret"
     token = sign_jwt(payload, secret_key)
     return {"token": token}
 
@@ -343,44 +344,61 @@ def retrieve_secure_chunks_internal(security_context: str, query_vector: str, si
         url_role = f"{redis_url}/get/user:is_instructor:{user_id}:{course_id}"
         try:
             is_instructor_res = requests.get(url_role, headers={"Authorization": f"Bearer {redis_token}"}).json()
-            is_instructor = is_instructor_res.get("result") == "1"
+            redis_val = is_instructor_res.get("result")
+            if redis_val is not None:
+                is_instructor = redis_val == "1"
+            else:
+                is_instructor = bool(frappe.db.exists("Course Instructor", {"parent": course_id, "instructor": user_id}))
         except Exception:
             is_instructor = bool(frappe.db.exists("Course Instructor", {"parent": course_id, "instructor": user_id}))
     else:
         is_instructor = bool(frappe.db.exists("Course Instructor", {"parent": course_id, "instructor": user_id}))
         
-    params = [q_vec, tenant_id, session_id]
-    role_filter = ""
+    params = [query_vector, tenant_id, session_id]
+    
     if not is_instructor:
-        role_filter = "AND c.user_id = %s"
-        params.append(user_id)
+        # Check student enrollment or session ownership to allow students to query their own sessions
+        is_enrolled = bool(frappe.db.exists("LMS Enrollment", {"member": user_id, "course": course_id}))
+        if not is_enrolled:
+            owns_session = bool(frappe.db.sql(
+                "SELECT name FROM `tabLMS Session Document` WHERE session_id = %s AND owner = %s LIMIT 1",
+                (session_id, user_id)
+            ))
+            if not owns_session:
+                frappe.local.response["http_status_code"] = 403
+                return {"error": "Access denied: Student is not enrolled in this course and does not own this session."}
+            
+        session_owner_filter = "AND (owner = %s OR owner IN (SELECT parent FROM `tabHas Role` WHERE role IN ('Instructor', 'System Manager')))"
+        role_filter = "AND (c.user_id = %s OR d.course_id = 'general' OR d.course_id IN (SELECT course FROM `tabLMS Enrollment` WHERE member = %s))"
+        params.extend([user_id, user_id, user_id])
     else:
-        role_filter = "AND c.course_id = %s"
-        params.append(course_id)
+        session_owner_filter = ""
+        role_filter = "AND (c.course_id = %s OR d.course_id = %s)"
+        params.extend([course_id, course_id])
         
     params.extend([similarity_threshold, limit])
     
-    sql = """
+    sql = '''
         SELECT c.id, c.document_id, c.content, c.page_number, 1 - VEC_COSINE_DISTANCE(c.embedding, %s) AS similarity
         FROM `LMS Document Chunk` c
         JOIN `tabLMS Session Document` d ON c.document_id = d.name
         WHERE c.tenant_id = %s AND d.file_key IN (
-            SELECT file_key FROM `tabLMS Session Document` WHERE session_id = %s
+            SELECT file_key FROM `tabLMS Session Document` WHERE session_id = %s {session_owner_filter}
         )
         {role_filter}
         HAVING similarity >= %s
         ORDER BY similarity DESC
         LIMIT %s
-    """
+    '''
     
-    sql_formatted = sql.format(role_filter=role_filter)
+    sql_formatted = sql.format(session_owner_filter=session_owner_filter, role_filter=role_filter)
     rows = frappe.db.sql(sql_formatted, params, as_dict=True)
     
     log_id = str(uuid.uuid4())
-    frappe.db.sql("""
+    frappe.db.sql('''
         INSERT INTO `LMS RAG Audit Log` (id, user_id, action, document_id, session_id, tenant_id, ip_address)
         VALUES (%s, %s, 'retrieval', NULL, %s, %s, %s)
-    """, (log_id, user_id, session_id, tenant_id, frappe.local.ip or "127.0.0.1"))
+    ''', (log_id, user_id, session_id, tenant_id, getattr(frappe.local, "ip", None) or "127.0.0.1"))
     frappe.db.commit()
     
     return {"chunks": rows}

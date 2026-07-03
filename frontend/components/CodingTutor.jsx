@@ -8,7 +8,8 @@ import { python } from '@codemirror/lang-python';
 import {
   Code2, Loader2, ChevronRight, Lock, FlipHorizontal,
   Paperclip, Mic, Image, HelpCircle, Send, AlignLeft, Sparkles, ChevronLeft,
-  BookOpen, BarChart3, Home, Zap, Brain, Award, FileText, FolderOpen, Briefcase
+  BookOpen, BarChart3, Home, Zap, Brain, Award, FileText, FolderOpen, Briefcase,
+  Trash
 } from 'lucide-react';
 import {
   T, geminiCall,
@@ -20,6 +21,8 @@ import {
   MODE_INSTRUCTIONS, LENGTH_INSTRUCTIONS, detectPromptInjection,
   MAX_TOKENS, getTheme, setTheme
 } from '@/lib/lms-data';
+import VoiceAgentView from '@/components/voice-tutor/VoiceAgentView';
+import { getJwtToken } from '@/lib/jwtCache';
 import MobileNav from '@/components/MobileNav';
 import { useMediaQuery, isMobileMQ } from '@/lib/useMediaQuery';
 import dynamic from 'next/dynamic';
@@ -212,8 +215,11 @@ export default function CodingTutor() {
   const [isPlaygroundOpen, setIsPlaygroundOpen] = useState(false);
   const [textSessions, setTextSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [activeTab, setActiveTab] = useState('text'); // 'text' or 'voice'
+  const [voiceSessionToRestore, setVoiceSessionToRestore] = useState(null);
   
   const [jwtToken, setJwtToken] = useState(null);
+  const [authenticating, setAuthenticating] = useState(true);
   const [sessionDocs, setSessionDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState('');
@@ -227,16 +233,13 @@ export default function CodingTutor() {
   useEffect(() => {
     const fetchJwt = async () => {
       try {
-        const res = await fetch('/api/auth/jwt');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.token) {
-            setJwtToken(data.token);
-            console.warn("[CodingTutor] Successfully retrieved JWT token.");
-          }
-        }
+        const token = await getJwtToken();
+        setJwtToken(token);
+        console.warn("[CodingTutor] Successfully retrieved JWT token.");
       } catch (e) {
         console.error("Failed to load JWT token:", e);
+      } finally {
+        setAuthenticating(false);
       }
     };
     fetchJwt();
@@ -256,8 +259,9 @@ export default function CodingTutor() {
 
   const fetchAvailableDocs = useCallback(async () => {
     if (!jwtToken) return;
+    const sid = currentSessionId || '';
     try {
-      const res = await fetch('/api/documents/list', {
+      const res = await fetch(`/api/documents/list?sessionId=${sid}`, {
         headers: {
           'Authorization': `Bearer ${jwtToken}`
         }
@@ -269,7 +273,7 @@ export default function CodingTutor() {
     } catch (e) {
       console.error("Failed to fetch available docs:", e);
     }
-  }, [jwtToken]);
+  }, [jwtToken, currentSessionId]);
 
   useEffect(() => {
     if (jwtToken) {
@@ -722,15 +726,8 @@ export default function CodingTutor() {
     if (!currentSessionId) setCurrentSessionId(sid);
     
     try {
-      let token = jwtToken;
-      if (!token) {
-        const jwtRes = await fetch('/api/auth/jwt');
-        if (jwtRes.ok) {
-          const jwtData = await jwtRes.json();
-          token = jwtData.token;
-          setJwtToken(token);
-        }
-      }
+      let token = jwtToken || await getJwtToken().catch(() => null);
+      if (token && !jwtToken) setJwtToken(token);
       
       if (!token) {
         throw new Error("Unable to obtain authenticated token. Please refresh.");
@@ -778,15 +775,8 @@ export default function CodingTutor() {
     if (!sid) return;
     
     try {
-      let token = jwtToken;
-      if (!token) {
-        const jwtRes = await fetch('/api/auth/jwt');
-        if (jwtRes.ok) {
-          const jwtData = await jwtRes.json();
-          token = jwtData.token;
-          setJwtToken(token);
-        }
-      }
+      let token = jwtToken || await getJwtToken().catch(() => null);
+      if (token && !jwtToken) setJwtToken(token);
       
       const res = await fetch('/api/documents/delete', {
         method: 'POST',
@@ -813,6 +803,32 @@ export default function CodingTutor() {
     }
   };
 
+  const handleLibraryDelete = async (docId) => {
+    try {
+      let token = jwtToken || await getJwtToken().catch(() => null);
+      if (token && !jwtToken) setJwtToken(token);
+      
+      const res = await fetch('/api/documents/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ documentId: docId, sessionId: currentSessionId || 'general' })
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete');
+      }
+      
+      setAvailableDocs(prev => prev.filter(d => d.id !== docId));
+    } catch (err) {
+      console.error("Library delete error:", err);
+      setUploadErr(err.message || 'Error deleting from library');
+    }
+  };
+
   // Construct a specialized coding feature system prompt that enforces programming constraints
   const getCodingFeatureSystem = (type) => {
     const baseSystem = FEATURE_SYSTEMS[type] || TUTOR_SYSTEM;
@@ -827,8 +843,9 @@ export default function CodingTutor() {
     const sid = currentSessionId || Date.now().toString(36);
     if (!currentSessionId) setCurrentSessionId(sid);
 
-    const userMsg = { id: Date.now().toString(36), role: 'user', content: raw, mode, length };
+    const userMsg = { id: Date.now().toString(36), role: 'user', content: raw, mode, length, documents: [...sessionDocs] };
     const msgsWithUser = [...messages, userMsg];
+    setSessionDocs([]);
 
     if (detectPromptInjection(raw)) {
       const aiMsg = { 
@@ -1185,12 +1202,8 @@ export default function CodingTutor() {
                   return (
                     <button key={'coding-' + session.id}
                       onClick={() => {
-                        const msgs = (session.messages || []).map(m => ({ ...m, features: m.features || {} }));
-                        setMessages(msgs);
-                        setMode(session.mode || 'Beginner');
-                        setLength(session.length || 'Medium');
-                        setCurrentSessionId(session.id);
-                        setErr(''); setTopic('');
+                        setActiveTab('text');
+                        handleSelectSession(session);
                         if (close) close();
                       }}
                       style={{
@@ -1255,6 +1268,23 @@ export default function CodingTutor() {
   const showSplitLayout = isPlaygroundOpen && !isMobile && !isTabletOrSmallDesktop;
   const showVerticalSplit = isPlaygroundOpen && (isMobile || isTabletOrSmallDesktop);
 
+  if (authenticating) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg, color: T.text }}>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+          .custom-spin {
+            animation: spin 1s linear infinite;
+          }
+        `}</style>
+        <Loader2 className="custom-spin" size={48} color={T.amber} />
+        <p style={{ marginTop: 16, fontSize: 14, color: T.muted, fontWeight: 500 }}>Authenticating session...</p>
+      </div>
+    );
+  }
+
   return (
     <>
       <MobileNav title="Coding Tutor" accent={T.amber} items={[]} dropdownItems={NAV} extras={tutorExtras} />
@@ -1312,13 +1342,58 @@ export default function CodingTutor() {
                   <Zap size={13} fill={isPlaygroundOpen ? T.accent : 'none'} />
                   {isPlaygroundOpen ? 'Close Sandbox' : 'Open Sandbox'}
                 </button>
+
+                <div style={{ display: 'flex', background: T.s2, borderRadius: 18, padding: 2, border: `1px solid ${T.border}` }}>
+                  <button onClick={() => setActiveTab('text')}
+                    style={{
+                      border: 'none', background: activeTab === 'text' ? T.amber : 'transparent',
+                      color: activeTab === 'text' ? '#fff' : T.muted, borderRadius: 15,
+                      padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', transition: 'all 0.2s'
+                    }}>
+                    Text
+                  </button>
+                  <button onClick={() => setActiveTab('voice')}
+                    style={{
+                      border: 'none', background: activeTab === 'voice' ? T.amber : 'transparent',
+                      color: activeTab === 'voice' ? '#fff' : T.muted, borderRadius: 15,
+                      padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', transition: 'all 0.2s'
+                    }}>
+                    Voice
+                  </button>
+                </div>
+
                 {isMobile && streamingText && (
-                  <Loader2 size={14} color={T.accent} style={{ animation: 'spin 1s linear infinite' }} />
+                  <Loader2 size={14} color={T.accent} className="custom-spin" />
                 )}
               </div>
             </div>
 
-            {/* ── CHAT MESSAGES AREA ── */}
+            {activeTab === 'voice' ? (
+              <VoiceAgentView
+                inline={true}
+                onClose={() => { setActiveTab('text'); setVoiceSessionToRestore(null); }}
+                initialSession={voiceSessionToRestore}
+                sessionId={currentSessionId}
+                userId={userId}
+                onSessionComplete={(voiceMsgs) => {
+                  if (voiceMsgs?.length > 0) {
+                    const mapped = voiceMsgs.map(m => ({
+                      role: m.sender === 'student' ? 'user' : 'ai',
+                      content: m.text
+                    }));
+                    setMessages(prev => {
+                      const updated = [...prev, ...mapped];
+                      setTimeout(() => saveSession(updated, currentSessionId), 100);
+                      return updated;
+                    });
+                  }
+                }}
+              />
+            ) : (
+              <>
+                {/* ── CHAT MESSAGES AREA ── */}
             <div ref={chatRef} style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px 14px 10px' : '28px 28px 16px' }}>
               {/* Welcome AI Message */}
               <div style={{ display: 'flex', gap: rGap, marginBottom: 24, maxWidth: msgMaxW }}>
@@ -1353,6 +1428,16 @@ export default function CodingTutor() {
                           <div style={{ fontSize: 11, color: T.muted, fontWeight: 600, letterSpacing: '0.04em', marginBottom: 4 }}>YOU</div>
                           <div style={{ background: T.s3, border: `1px solid ${T.border}`, borderRadius: '14px 14px 4px 14px', padding: '10px 14px', color: T.text, fontSize: 14, lineHeight: 1.65, maxWidth: bubbleMaxW, whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'left' }}>
                             {msg.content}
+                            {msg.documents && msg.documents.length > 0 && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
+                                {msg.documents.map(doc => (
+                                  <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.muted }}>
+                                    <span>📄</span>
+                                    <span style={{ fontWeight: 500, color: T.text }}>{doc.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div style={{ fontSize: 10, color: T.dim, marginTop: 4 }}>{msg.mode} &middot; {msg.length}</div>
                         </div>
@@ -1721,7 +1806,6 @@ export default function CodingTutor() {
                         return (
                           <div
                             key={opt.id}
-                            onClick={() => handleSelectMention(opt)}
                             onMouseEnter={() => setSelectedMentionIndex(idx)}
                             style={{
                               padding: '8px 14px',
@@ -1734,14 +1818,33 @@ export default function CodingTutor() {
                               transition: 'all 0.15s'
                             }}
                           >
-                            <span style={{ fontSize: 16 }}>{opt.icon}</span>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 700, color: opt.color, fontSize: 12.5 }}>@{opt.name}</span>
-                                <span style={{ fontWeight: 600, color: T.text, fontSize: 12 }}>{opt.label}</span>
+                            <div onClick={() => handleSelectMention(opt)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
+                              <span style={{ fontSize: 16 }}>{opt.icon}</span>
+                              <div style={{ flex: 1, overflow: 'hidden' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontWeight: 700, color: opt.color, fontSize: 12.5 }}>@{opt.name}</span>
+                                  <span style={{ fontWeight: 600, color: T.text, fontSize: 12 }}>{opt.label}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{opt.desc}</div>
                               </div>
-                              <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{opt.desc}</div>
                             </div>
+                            {opt.isDoc && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Are you sure you want to permanently delete "${opt.label}" from your library?`)) {
+                                    await handleLibraryDelete(opt.id);
+                                  }
+                                }}
+                                style={{
+                                  background: 'none', border: 'none', color: T.red, cursor: 'pointer', padding: '4px',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.7
+                                }}
+                                title="Delete from library"
+                              >
+                                <Trash size={12} />
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -1777,7 +1880,9 @@ export default function CodingTutor() {
                 </button>
               </div>
             </div>
-          </div>
+          </>
+        )}
+      </div>
 
           {/* Draggable Divider (Desktop only) */}
           {showSplitLayout && (

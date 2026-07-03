@@ -18,13 +18,16 @@ export async function GET(request) {
     }
     
     const frappeUrl = process.env.FRAPPE_URL || 'https://vyomanta.onrender.com';
-    const exchangeUrl = `${frappeUrl}/api/method/lms.lms.api.get_jwt?sid=${sid}`;
+    const exchangeUrl = `${frappeUrl}/api/method/lms.lms.api.get_jwt`;
     
     console.warn(`[JWT Proxy] Requesting JWT from backend for session ${sid.slice(0, 10)}...`);
     
     const response = await fetch(exchangeUrl, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cookie': `sid=${sid}`
+      }
     });
     
     if (!response.ok) {

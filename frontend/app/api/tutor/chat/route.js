@@ -99,7 +99,7 @@ export async function POST(request) {
             chunks.forEach(chunk => {
               ragContext += `[Source: Page ${chunk.page_number}] ${chunk.content}\n`;
             });
-            ragContext += '\nOnly answer based on this context if it\'s relevant to the question. Cite the page numbers in your response when referencing facts.';
+            ragContext += '\nUse the provided context to answer the question when relevant and cite page numbers. If the student\'s question is unrelated to the context or cannot be answered using it, use your own general knowledge to answer directly, but clarify that it is from general knowledge rather than the document.';
           }
         } else {
           console.error(`[TutorChat] RLS API query failed: ${rlsResponse.status} ${rlsResponse.statusText}`);

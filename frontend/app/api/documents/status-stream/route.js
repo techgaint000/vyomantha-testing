@@ -43,16 +43,27 @@ export async function GET(request) {
   // Status check logic
   const checkStatus = async () => {
     try {
-      // Query the document status in TiDB
+      // Query the document status in TiDB including owner and tenant_id for RLS check
       const [rows] = await pool.query(
-        'SELECT status FROM test.`tabLMS Session Document` WHERE name = ?',
+        'SELECT status, owner, tenant_id FROM test.`tabLMS Session Document` WHERE name = ?',
         [documentId]
       );
       
       if (rows.length > 0) {
-        const status = rows[0].status;
-        console.warn(`[SSE Status] Document ${documentId} status: ${status}`);
+        const { status, owner, tenant_id } = rows[0];
         
+        // Enforce Row-Level Security: Only the owner of the document within the same tenant can check its status
+        if (owner !== payload.user_id || tenant_id !== (payload.tenant_id || 'default')) {
+          console.warn(`[SSE Status] Access denied: User ${payload.user_id} tried to check status of document ${documentId} owned by ${owner}`);
+          await writer.write(encoder.encode(`data: ${JSON.stringify({ status: 'unauthorized' })}\n\n`));
+          clearInterval(intervalId);
+          try {
+            writer.close();
+          } catch (e) {}
+          return;
+        }
+        
+        console.warn(`[SSE Status] Document ${documentId} status: ${status}`);
         await writer.write(encoder.encode(`data: ${JSON.stringify({ status })}\n\n`));
         
         // Terminate stream upon terminal states

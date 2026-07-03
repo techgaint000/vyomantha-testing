@@ -24,16 +24,48 @@ export async function POST(request) {
     try {
       await connection.beginTransaction();
 
-      // 1. Verify that the requesting user owns at least one upload of this file_key
-      const [ownership] = await connection.query(
-        `SELECT name FROM test.\`tabLMS Session Document\` 
-         WHERE file_key = ? AND owner = ? AND tenant_id = ? LIMIT 1`,
-        [file_key, userId, tenantId]
+      // 1. Get the original document course context and check ownership/enrollment
+      const [docContexts] = await connection.query(
+        `SELECT course_id, owner FROM test.\`tabLMS Session Document\` 
+         WHERE file_key = ? AND tenant_id = ? ORDER BY creation ASC LIMIT 1`,
+        [file_key, tenantId]
       );
 
-      if (ownership.length === 0) {
+      if (docContexts.length === 0) {
         await connection.rollback();
-        return NextResponse.json({ error: 'Forbidden: You do not own this document.' }, { status: 403 });
+        return NextResponse.json({ error: 'Document not found.' }, { status: 404 });
+      }
+
+      const docContext = docContexts[0];
+      let hasAccess = false;
+
+      if (docContext.owner === userId) {
+        hasAccess = true;
+      } else {
+        // Check student enrollment
+        const [enrollment] = await connection.query(
+          `SELECT name FROM test.\`tabLMS Enrollment\` 
+           WHERE member = ? AND course = ? LIMIT 1`,
+          [userId, docContext.course_id]
+        );
+        if (enrollment.length > 0) {
+          hasAccess = true;
+        } else {
+          // Check course instructor role
+          const [instructor] = await connection.query(
+            `SELECT name FROM test.\`tabCourse Instructor\` 
+             WHERE parent = ? AND instructor = ? LIMIT 1`,
+            [docContext.course_id, userId]
+          );
+          if (instructor.length > 0) {
+            hasAccess = true;
+          }
+        }
+      }
+
+      if (!hasAccess) {
+        await connection.rollback();
+        return NextResponse.json({ error: 'Forbidden: You do not have access to this course document.' }, { status: 403 });
       }
 
       // 2. Check if this document is already attached to this session

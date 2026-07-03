@@ -64,7 +64,7 @@ fi
 # Apply environment configurations dynamically
 bench set-mariadb-host "$DB_HOST"
 bench set-config -g db_port "$DB_PORT"
-bench set-config -g allow_cors "*"
+bench set-config -g allow_cors "${FRONTEND_URL:-*}"
 bench set-config -g ignore_csrf 1
 
 # Ensure site config and logs directories exist
@@ -81,7 +81,7 @@ cat <<EOF > sites/lms.render/site_config.json
  "db_user": "$DB_USER",
  "db_ssl_ca": "/etc/ssl/certs/ca-certificates.crt",
  "encryption_key": "8kAnz-VWclIhMghrU8g_39K2setlLtLR_9PJL1BjRxY=",
- "allow_cors": "*",
+ "allow_cors": "${FRONTEND_URL:-*}",
  "session_cookie_samesite": "None"
 }
 EOF
@@ -118,7 +118,7 @@ if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/
     
     # Restore SSL and CORS configurations to site_config.json
     bench --site lms.render set-config db_ssl_ca "/etc/ssl/certs/ca-certificates.crt"
-    bench --site lms.render set-config allow_cors "*"
+    bench --site lms.render set-config allow_cors "${FRONTEND_URL:-*}"
 
     # Install payments and LMS apps
     echo "Installing payments & lms applications..."
@@ -126,7 +126,7 @@ if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" --ssl-ca=/
     bench --site lms.render install-app lms
 else
     echo "Database is already seeded. Connecting to existing database tables..."
-    bench --site lms.render set-config allow_cors "*"
+    bench --site lms.render set-config allow_cors "${FRONTEND_URL:-*}"
     bench --site lms.render clear-cache
 fi
 
@@ -139,6 +139,7 @@ bench --site lms.render migrate
 # Bootstrap student users in the database
 echo "Bootstrapping student users..."
 bench --site lms.render execute "exec(open('/home/frappe/create_students.py').read())"
+bench --site lms.render execute "exec(open('/home/frappe/grant_question_perm.py').read())"
 
 # Shutdown the dummy server to free port 8000
 echo "Stopping dummy server..."
@@ -149,11 +150,14 @@ sleep 2
 
 # Install queue worker dependencies in the bench virtualenv
 echo "Installing queue worker dependencies..."
-./env/bin/pip install pypdf boto3 pymysql
+./env/bin/pip install pypdf boto3 pymysql python-Levenshtein
 
-# Start the background queue worker process
-echo "Starting background queue worker..."
-./env/bin/python /home/frappe/queue_worker.py &
+# Start the background queue worker process (supports scaling via env var)
+CONCURRENCY=${QUEUE_WORKER_CONCURRENCY:-2}
+echo "Starting $CONCURRENCY background queue workers..."
+for i in $(seq 1 $CONCURRENCY); do
+    ./env/bin/python /home/frappe/queue_worker.py &
+done
 
 # Update Procfile port mapping to Render's dynamic binding
 sed -i "s/bench serve.*/bench serve --port ${PORT:-8000}/g" ./Procfile

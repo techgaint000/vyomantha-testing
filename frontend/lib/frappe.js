@@ -48,12 +48,27 @@ async function handleResponse(res, isRest = true) {
   const data = await res.json();
   return isRest ? data.data : data.message;
 }
+const promiseCache = new Map();
+
+function getCachedPromise(key, fetchFn) {
+  if (promiseCache.has(key)) {
+    return promiseCache.get(key);
+  }
+  const promise = fetchFn().catch(err => {
+    promiseCache.delete(key);
+    throw err;
+  });
+  promiseCache.set(key, promise);
+  return promise;
+}
+
+export function clearApiCache() {
+  promiseCache.clear();
+}
 
 export async function frappeGet(method, params = {}) {
   if (!FRAPPE_URL) throw new Error("Frappe URL not configured");
-  const url = new URL(`${FRAPPE_URL}/api/method/${method}`);
   
-  // Retrieve saved sid to bypass cross-site cookie restrictions
   let sid = null;
   if (typeof window !== 'undefined') {
     sid = localStorage.getItem('frappe_sid');
@@ -64,17 +79,23 @@ export async function frappeGet(method, params = {}) {
     mergedParams.sid = sid;
   }
   
-  Object.entries(mergedParams).forEach(([k, v]) => url.searchParams.set(k, v));
-
-  const res = await fetch(url.toString(), {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+  const cacheKey = `GET_METHOD:${method}:${JSON.stringify(mergedParams)}`;
+  
+  return getCachedPromise(cacheKey, async () => {
+    const url = new URL(`${FRAPPE_URL}/api/method/${method}`);
+    Object.entries(mergedParams).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString(), {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    return handleResponse(res, false);
   });
-  return handleResponse(res, false);
 }
 
 export async function frappePost(method, body = {}) {
   if (!FRAPPE_URL) throw new Error("Frappe URL not configured");
+  
+  promiseCache.clear();
   
   let sid = null;
   if (typeof window !== 'undefined') {
@@ -97,8 +118,6 @@ export async function frappePost(method, body = {}) {
 
 export async function frappeRestGet(resource, params = {}) {
   if (!FRAPPE_URL) throw new Error("Frappe URL not configured");
-  const encodedSegments = resource.split('/').map(segment => encodeURIComponent(segment)).join('/');
-  const url = new URL(`${FRAPPE_URL}/api/resource/${encodedSegments}`);
   
   let sid = null;
   if (typeof window !== 'undefined') {
@@ -110,16 +129,25 @@ export async function frappeRestGet(resource, params = {}) {
     mergedParams.sid = sid;
   }
   
-  Object.entries(mergedParams).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+  const cacheKey = `GET_REST:${resource}:${JSON.stringify(mergedParams)}`;
+  
+  return getCachedPromise(cacheKey, async () => {
+    const encodedSegments = resource.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    const url = new URL(`${FRAPPE_URL}/api/resource/${encodedSegments}`);
+    Object.entries(mergedParams).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString(), {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    return handleResponse(res, true);
   });
-  return handleResponse(res, true);
 }
 
 export async function frappeRestPost(resource, body = {}) {
   if (!FRAPPE_URL) throw new Error("Frappe URL not configured");
+  
+  promiseCache.clear();
+  
   const encodedSegments = resource.split('/').map(segment => encodeURIComponent(segment)).join('/');
   
   let sid = null;
@@ -143,6 +171,9 @@ export async function frappeRestPost(resource, body = {}) {
 
 export async function frappeRestPut(resource, name, body = {}) {
   if (!FRAPPE_URL) throw new Error("Frappe URL not configured");
+  
+  promiseCache.clear();
+  
   const encodedResource = resource.split('/').map(segment => encodeURIComponent(segment)).join('/');
   const encodedName = encodeURIComponent(name);
   
@@ -167,6 +198,9 @@ export async function frappeRestPut(resource, name, body = {}) {
 
 export async function frappeRestDelete(resource, name) {
   if (!FRAPPE_URL) throw new Error("Frappe URL not configured");
+  
+  promiseCache.clear();
+  
   const encodedResource = resource.split('/').map(segment => encodeURIComponent(segment)).join('/');
   const encodedName = encodeURIComponent(name);
   
@@ -1010,6 +1044,7 @@ export async function checkStudentEnrollment(courseId, studentEmail) {
   if (FRAPPE_URL) {
     try {
       const res = await frappeRestGet("LMS Enrollment", {
+        fields: JSON.stringify(["name"]),
         filters: JSON.stringify([
           ["course", "=", courseId],
           ["member", "=", studentEmail]
@@ -1042,6 +1077,7 @@ export async function getStudentEnrollments(studentEmail) {
   if (FRAPPE_URL) {
     try {
       const res = await frappeRestGet("LMS Enrollment", {
+        fields: JSON.stringify(["course"]),
         filters: JSON.stringify([
           ["member", "=", studentEmail]
         ]),
@@ -1211,7 +1247,7 @@ export async function createQuiz(quizData) {
       }
 
       // 2. Create the LMS Quiz document referencing these questions
-      const result = await frappeRestPost("LMS Quiz", {
+      const payload = {
         title: quizData.title,
         course: quizData.course,
         lesson: quizData.lesson || undefined,
@@ -1220,7 +1256,19 @@ export async function createQuiz(quizData) {
         total_marks: parseInt(quizData.total_marks) || 10,
         duration: quizData.duration || '10 mins',
         questions: questionsRefs
-      });
+      };
+
+      let result;
+      try {
+        result = await frappeRestPost("LMS Quiz", payload);
+      } catch (err) {
+        if (err.message && err.message.includes("Could not find Lesson")) {
+          delete payload.lesson;
+          result = await frappeRestPost("LMS Quiz", payload);
+        } else {
+          throw err;
+        }
+      }
       return { ...quizData, id: result.name };
     } catch (e) {
       console.error("Failed to create quiz via Frappe REST API. Falling back to local state.", e);
@@ -1261,13 +1309,27 @@ export async function updateQuiz(id, quizData) {
           is_correct_4: q.correct === 3 ? 1 : 0,
         };
 
-        if (qName && !qName.startsWith("q_") && !qName.startsWith("quiz-")) {
-          // Update existing Question document
-          await frappeRestPut("LMS Question", qName, qPayload);
-        } else {
-          // Create new Question document
-          const qDoc = await frappeRestPost("LMS Question", qPayload);
-          qName = qDoc.name;
+        try {
+          if (qName && !qName.startsWith("q_") && !qName.startsWith("quiz-")) {
+            // Update existing Question document
+            await frappeRestPut("LMS Question", qName, qPayload);
+          } else {
+            // Create new Question document
+            const qDoc = await frappeRestPost("LMS Question", qPayload);
+            qName = qDoc.name;
+          }
+        } catch (qErr) {
+          const isNotFound = qErr.message && (
+            qErr.message.includes('not found') || 
+            qErr.message.includes('404') || 
+            qErr.message.includes('DoesNotExistError')
+          );
+          if (isNotFound) {
+            const qDoc = await frappeRestPost("LMS Question", qPayload);
+            qName = qDoc.name;
+          } else {
+            throw qErr;
+          }
         }
 
         questionsRefs.push({
@@ -1279,7 +1341,7 @@ export async function updateQuiz(id, quizData) {
       }
 
       // 2. Update LMS Quiz referencing these questions
-      await frappeRestPut("LMS Quiz", id, {
+      const updatePayload = {
         title: quizData.title,
         course: quizData.course,
         lesson: quizData.lesson || null,
@@ -1288,8 +1350,54 @@ export async function updateQuiz(id, quizData) {
         total_marks: parseInt(quizData.total_marks) || 10,
         duration: quizData.duration,
         questions: questionsRefs
-      });
-      return quizData;
+      };
+      
+      try {
+        try {
+          await frappeRestPut("LMS Quiz", id, updatePayload);
+        } catch (err) {
+          if (err.message && err.message.includes("Could not find Lesson")) {
+            updatePayload.lesson = null;
+            await frappeRestPut("LMS Quiz", id, updatePayload);
+          } else {
+            throw err;
+          }
+        }
+        return quizData;
+      } catch (qzErr) {
+        const isNotFound = qzErr.message && (
+          qzErr.message.includes('not found') || 
+          qzErr.message.includes('404') || 
+          qzErr.message.includes('DoesNotExistError')
+        );
+        if (isNotFound) {
+          const createPayload = {
+            title: quizData.title,
+            course: quizData.course,
+            lesson: quizData.lesson || undefined,
+            max_attempts: parseInt(quizData.max_attempts) || 3,
+            passing_percentage: parseInt(quizData.passing_percentage) || 70,
+            total_marks: parseInt(quizData.total_marks) || 10,
+            duration: quizData.duration || '10 mins',
+            questions: questionsRefs
+          };
+          
+          let result;
+          try {
+            result = await frappeRestPost("LMS Quiz", createPayload);
+          } catch (err) {
+            if (err.message && err.message.includes("Could not find Lesson")) {
+              delete createPayload.lesson;
+              result = await frappeRestPost("LMS Quiz", createPayload);
+            } else {
+              throw err;
+            }
+          }
+          return { ...quizData, id: result.name };
+        } else {
+          throw qzErr;
+        }
+      }
     } catch (e) {
       console.error("Failed to update quiz via Frappe REST API. Falling back to local state.", e);
       throw e;
@@ -1307,12 +1415,13 @@ export async function updateQuiz(id, quizData) {
 }
 
 export async function deleteQuiz(id) {
+  let backendDeleted = false;
   if (FRAPPE_URL) {
     try {
       await frappeRestDelete("LMS Quiz", id);
-      return true;
+      backendDeleted = true;
     } catch (e) {
-      console.error("Failed to delete quiz.", e);
+      console.error("Failed to delete quiz from Frappe server. It might be local-only or unauthorized.", e);
     }
   }
 
@@ -1323,7 +1432,7 @@ export async function deleteQuiz(id) {
     localStorage.setItem('admin_quizzes_list', JSON.stringify(filtered));
     return true;
   }
-  return false;
+  return backendDeleted;
 }
 
 // --- LMS Quiz Submission API ---
@@ -1512,10 +1621,14 @@ export async function deleteAssignment(id) {
 export async function getAssignmentSubmissions() {
   if (FRAPPE_URL) {
     try {
-      return await frappeRestGet("LMS Assignment Submission", {
+      const res = await frappeRestGet("LMS Assignment Submission", {
         fields: JSON.stringify(["name", "assignment", "assignment_title", "type", "member", "member_name", "evaluator", "assignment_attachment", "answer", "status", "question", "comments", "course", "lesson"]),
         limit_page_length: 100
       });
+      return (res || []).map(s => ({
+        id: s.name,
+        ...s
+      }));
     } catch (e) {
       console.error("Failed to fetch assignment submissions.", e);
     }

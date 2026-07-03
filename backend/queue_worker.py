@@ -127,6 +127,53 @@ def get_embedding_with_retry(text, attempt=0, retries=5, base_delay=1):
             
     raise Exception("Failed to fetch embedding after max retries.")
 
+def get_batch_embeddings_with_retry(texts, attempt=0, retries=5, base_delay=1):
+    api_key = get_rotated_key(attempt)
+    if not api_key:
+        raise Exception("No active Gemini API keys configured.")
+        
+    requests_list = []
+    for t in texts:
+        requests_list.append({
+            "model": "models/gemini-embedding-001",
+            "content": {"parts": [{"text": t}]},
+            "outputDimensionality": 768
+        })
+        
+    for i in range(retries):
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key={api_key}"
+            headers = {"Content-Type": "application/json"}
+            payload = {"requests": requests_list}
+            res = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if res.status_code == 429:
+                delay = base_delay * (2 ** i)
+                print(f"Gemini API rate limit (429) for batch. Retrying in {delay}s...")
+                time.sleep(delay)
+                continue
+                
+            data = res.json()
+            if "error" in data:
+                error_msg = data["error"].get("message", "Unknown API error")
+                if data["error"].get("code") in [429, 503]:
+                    delay = base_delay * (2 ** i)
+                    print(f"Gemini API error ({data['error'].get('code')}) for batch. Retrying in {delay}s...")
+                    time.sleep(delay)
+                    continue
+                else:
+                    raise Exception(error_msg)
+            
+            return [emb["values"] for emb in data["embeddings"]]
+        except Exception as e:
+            if i == retries - 1:
+                raise e
+            delay = base_delay * (2 ** i)
+            print(f"Network error in batch embed: {e}. Retrying in {delay}s...")
+            time.sleep(delay)
+            
+    raise Exception("Failed to fetch batch embeddings after max retries.")
+
 def split_text(text, chunk_size=1000, overlap=200):
     paragraphs = text.split('\n\n')
     chunks = []
@@ -170,31 +217,19 @@ def split_text(text, chunk_size=1000, overlap=200):
         final_chunks.append(chunk)
     return final_chunks
 
-def process_job(conn, job):
+def process_job_outside(conn, job):
     job_id = job["id"]
     doc_id = job["document_id"]
     tenant_id = job["tenant_id"]
     attempts = job["attempts"]
     
-    print(f"Processing job {job_id} for document {doc_id} (Attempt {attempts + 1})")
-    
-    # 1. Update status to running
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "UPDATE `LMS Background Job Queue` SET status = 'running', attempts = attempts + 1 WHERE id = %s",
-            (job_id,)
-        )
-        cursor.execute(
-            "UPDATE `tabLMS Session Document` SET status = 'processing' WHERE name = %s",
-            (doc_id,)
-        )
-    
+    print(f"Processing job {job_id} for document {doc_id} outside lock")
     publish_status(doc_id, "processing")
     
     local_pdf = f"/tmp/{doc_id}.pdf"
     
     try:
-        # 2. Get document metadata
+        # 1. Get document metadata
         with conn.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute(
                 "SELECT file_key, owner, session_id, course_id FROM `tabLMS Session Document` WHERE name = %s",
@@ -210,7 +245,7 @@ def process_job(conn, job):
         session_id = doc_meta["session_id"]
         course_id = doc_meta["course_id"]
         
-        # 3. Download from B2
+        # 2. Download from B2
         print(f"Downloading from B2: Key={file_key}")
         resolved_region = B2_REGION
         if B2_ENDPOINT and 'backblazeb2.com' in B2_ENDPOINT:
@@ -228,7 +263,7 @@ def process_job(conn, job):
         )
         s3.download_file(B2_BUCKET_NAME, file_key, local_pdf)
         
-        # 4. Parse PDF text page-by-page
+        # 3. Parse PDF text page-by-page
         print("Extracting text and chunking...")
         from pypdf import PdfReader
         reader = PdfReader(local_pdf)
@@ -251,33 +286,58 @@ def process_job(conn, job):
         if not all_chunks:
             raise Exception("No readable text found in PDF document.")
             
-        # 5. Embed and save chunks
-        print(f"Generating embeddings for {len(all_chunks)} chunks...")
+        # 4. Embed chunks in batches of 50
+        batch_size = 50
+        chunks_with_embeddings = []
+        print(f"Generating embeddings in batches of {batch_size} for {len(all_chunks)} chunks...")
+        
+        for idx in range(0, len(all_chunks), batch_size):
+            batch = all_chunks[idx : idx + batch_size]
+            batch_texts = [c["content"] for c in batch]
+            
+            # Fetch embeddings for this batch (rotate keys using index offsets)
+            vectors = get_batch_embeddings_with_retry(batch_texts, attempt=attempts + idx)
+            if len(vectors) != len(batch):
+                raise Exception(f"Batch embedding size mismatch: expected {len(batch)} vectors, got {len(vectors)}")
+                
+            for j, vector in enumerate(vectors):
+                batch[j]["embedding"] = vector
+                chunks_with_embeddings.append(batch[j])
+                
+        # 5. Bulk Insert chunks and update job status in database (cap batches to 100)
+        print(f"Bulk inserting {len(chunks_with_embeddings)} chunks to database...")
         with conn.cursor() as cursor:
+            conn.begin()
             # Delete any existing chunks for this document in case of retries
             cursor.execute("DELETE FROM `LMS Document Chunk` WHERE document_id = %s", (doc_id,))
             
-            for idx, chunk in enumerate(all_chunks):
-                content = chunk["content"]
-                page_num = chunk["page_number"]
-                chunk_idx = chunk["chunk_index"]
-                
-                # Fetch embedding (pass index to rotate API keys)
-                vector = get_embedding_with_retry(content, attempt=attempts + idx)
-                
-                # Insert chunk row
-                chunk_id = str(uuid.uuid4())
-                cursor.execute(
-                    """
-                    INSERT INTO `LMS Document Chunk` 
-                    (id, document_id, session_id, user_id, course_id, tenant_id, chunk_index, page_number, content, embedding, embedding_model, embedding_version)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'gemini-embedding-001', 'v1')
-                    """,
-                    (chunk_id, doc_id, session_id, user_id, course_id, tenant_id, chunk_idx, page_num, content, str(vector))
-                )
-                
-        # 6. Complete Job
-        with conn.cursor() as cursor:
+            insert_query = """
+                INSERT INTO `LMS Document Chunk` 
+                (id, document_id, session_id, user_id, course_id, tenant_id, chunk_index, page_number, content, embedding, embedding_model, embedding_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'gemini-embedding-001', 'v1')
+            """
+            
+            db_batch_size = 100
+            for i in range(0, len(chunks_with_embeddings), db_batch_size):
+                insert_batch = chunks_with_embeddings[i : i + db_batch_size]
+                insert_data = [
+                    (
+                        str(uuid.uuid4()),
+                        doc_id,
+                        session_id,
+                        user_id,
+                        course_id,
+                        tenant_id,
+                        c["chunk_index"],
+                        c["page_number"],
+                        c["content"],
+                        str(c["embedding"])
+                    )
+                    for c in insert_batch
+                ]
+                cursor.executemany(insert_query, insert_data)
+            
+            # Complete Job
             cursor.execute(
                 "UPDATE `LMS Background Job Queue` SET status = 'completed' WHERE id = %s",
                 (job_id,)
@@ -286,29 +346,37 @@ def process_job(conn, job):
                 "UPDATE `tabLMS Session Document` SET status = 'completed' WHERE name = %s",
                 (doc_id,)
             )
+            conn.commit()
+            
         publish_status(doc_id, "completed")
         print(f"Job {job_id} completed successfully.")
         
     except Exception as err:
         print(f"Error processing job {job_id}: {err}")
         err_msg = str(err)
-        with conn.cursor() as cursor:
-            if attempts + 1 >= job["max_attempts"]:
-                cursor.execute(
-                    "UPDATE `LMS Background Job Queue` SET status = 'failed', error_message = %s WHERE id = %s",
-                    (err_msg, job_id)
-                )
-                cursor.execute(
-                    "UPDATE `tabLMS Session Document` SET status = 'failed' WHERE name = %s",
-                    (doc_id,)
-                )
-                publish_status(doc_id, "failed", err_msg)
-            else:
-                cursor.execute(
-                    "UPDATE `LMS Background Job Queue` SET status = 'queued', error_message = %s WHERE id = %s",
-                    (err_msg, job_id)
-                )
-                publish_status(doc_id, "retrying", err_msg)
+        try:
+            with conn.cursor() as cursor:
+                conn.begin()
+                if attempts + 1 >= job["max_attempts"]:
+                    cursor.execute(
+                        "UPDATE `LMS Background Job Queue` SET status = 'failed', error_message = %s WHERE id = %s",
+                        (err_msg, job_id)
+                    )
+                    cursor.execute(
+                        "UPDATE `tabLMS Session Document` SET status = 'failed' WHERE name = %s",
+                        (doc_id,)
+                    )
+                    conn.commit()
+                    publish_status(doc_id, "failed", err_msg)
+                else:
+                    cursor.execute(
+                        "UPDATE `LMS Background Job Queue` SET status = 'queued', error_message = %s WHERE id = %s",
+                        (err_msg, job_id)
+                    )
+                    conn.commit()
+                    publish_status(doc_id, "retrying", err_msg)
+        except Exception as db_err:
+            print(f"Failed to save job error status: {db_err}")
                 
     finally:
         # Clean up local file
@@ -318,15 +386,76 @@ def process_job(conn, job):
             except Exception:
                 pass
 
+def run_reaper(conn):
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            conn.begin()
+            # Find jobs stuck in 'running' status for more than 10 minutes
+            cursor.execute(
+                """
+                SELECT id, document_id, tenant_id, attempts, max_attempts 
+                FROM `LMS Background Job Queue`
+                WHERE status = 'running' AND updated_at < NOW() - INTERVAL 10 MINUTE
+                FOR UPDATE SKIP LOCKED
+                """
+            )
+            stuck_jobs = cursor.fetchall()
+            
+            for job in stuck_jobs:
+                job_id = job["id"]
+                doc_id = job["document_id"]
+                attempts = job["attempts"]
+                max_attempts = job["max_attempts"]
+                
+                print(f"Reaper: Found stuck job {job_id} for document {doc_id} (attempts={attempts})")
+                
+                if attempts >= max_attempts:
+                    cursor.execute(
+                        "UPDATE `LMS Background Job Queue` SET status = 'failed', error_message = 'Job timed out in running state' WHERE id = %s",
+                        (job_id,)
+                    )
+                    cursor.execute(
+                        "UPDATE `tabLMS Session Document` SET status = 'failed' WHERE name = %s",
+                        (doc_id,)
+                    )
+                    publish_status(doc_id, "failed", "Job timed out in running state")
+                    print(f"Reaper: Job {job_id} exceeded max attempts. Marked as failed.")
+                else:
+                    cursor.execute(
+                        "UPDATE `LMS Background Job Queue` SET status = 'queued', error_message = 'Job timed out in running state, resetting to queue' WHERE id = %s",
+                        (job_id,)
+                    )
+                    cursor.execute(
+                        "UPDATE `tabLMS Session Document` SET status = 'pending_ingestion' WHERE name = %s",
+                        (doc_id,)
+                    )
+                    publish_status(doc_id, "pending_ingestion", "Job timed out in running state, resetting to queue")
+                    print(f"Reaper: Reset job {job_id} to queued.")
+            conn.commit()
+    except Exception as e:
+        print(f"Error in reaper: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
 def main():
     print("🚀 TiDB Vector Ingestion Queue Worker started.")
     print(f"Configured DB: {DB_HOST}:{DB_PORT} (User={DB_USER})")
+    
+    last_reaper_run = 0
     
     while True:
         try:
             conn = get_db_connection()
             with conn:
                 while True:
+                    # Run reaper periodically every 60 seconds
+                    current_time = time.time()
+                    if current_time - last_reaper_run > 60:
+                        run_reaper(conn)
+                        last_reaper_run = current_time
+                        
                     # 1. Fetch next queued job with SKIP LOCKED row-locking
                     job = None
                     with conn.cursor(pymysql.cursors.DictCursor) as cursor:
@@ -345,14 +474,28 @@ def main():
                         job = cursor.fetchone()
                         
                         if job:
-                            # We got a job, process it
-                            process_job(conn, job)
+                            job_id = job["id"]
+                            doc_id = job["document_id"]
+                            attempts = job["attempts"]
+                            
+                            # Mark job as running and commit immediately to release lock
+                            cursor.execute(
+                                "UPDATE `LMS Background Job Queue` SET status = 'running', attempts = attempts + 1 WHERE id = %s",
+                                (job_id,)
+                            )
+                            cursor.execute(
+                                "UPDATE `tabLMS Session Document` SET status = 'processing' WHERE name = %s",
+                                (doc_id,)
+                            )
                             conn.commit()
                         else:
                             # Rollback/release empty search transaction
                             conn.rollback()
                             
-                    if not job:
+                    if job:
+                        # Process job outside the lock
+                        process_job_outside(conn, job)
+                    else:
                         # Queue is empty, sleep for 3 seconds before next poll
                         time.sleep(3)
                         

@@ -35,7 +35,7 @@ function generateLabel(messages, subject) {
 
 const TEXT_SESSIONS_KEY = 'general-tutor-sessions';
 
-export default function VoiceAgentView({ onClose, initialSession }) {
+export default function VoiceAgentView({ onClose, initialSession, inline = false, sessionId = null, userId = null, onSessionComplete = null }) {
   const [selectedLanguage, setSelectedLanguage] = useState('all');
   const [selectedSubject, setSelectedSubject] = useState('all');
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
@@ -46,12 +46,14 @@ export default function VoiceAgentView({ onClose, initialSession }) {
   const [sessions, setSessions] = useState(loadSessions);
   const [textSessions, setTextSessions] = useState([]);
 
-  const [userId] = useState(() => {
+  const [localUserId] = useState(() => {
     if (typeof window === 'undefined') return '';
     let id = localStorage.getItem('lms-user-id');
     if (!id) { id = 'user-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); localStorage.setItem('lms-user-id', id); }
     return id;
   });
+
+  const activeUserId = userId || localUserId;
 
   // Load text sessions for unified sidebar
   useEffect(() => {
@@ -106,7 +108,7 @@ export default function VoiceAgentView({ onClose, initialSession }) {
 
   const saveCurrentSession = useCallback(() => {
     if (conversation.length === 0) return;
-    const sid = voiceSessionIdRef.current || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    const sid = sessionId || voiceSessionIdRef.current || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
     const session = {
       id: sid,
       label: generateLabel(conversation, selectedSubject),
@@ -118,6 +120,12 @@ export default function VoiceAgentView({ onClose, initialSession }) {
     const updated = [session, ...sessions.filter((s) => s.id !== session.id)];
     setSessions(updated);
     saveSessions(updated);
+    
+    // Call parent complete callback if provided
+    if (onSessionComplete) {
+      onSessionComplete(conversation);
+    }
+
     // Persist to Redis memory asynchronously
     fetch('/api/memory', {
       method: 'POST',
@@ -125,11 +133,11 @@ export default function VoiceAgentView({ onClose, initialSession }) {
       body: JSON.stringify({
         action: 'save',
         sessionId: sid,
-        userId,
+        userId: activeUserId,
         messages: conversation.map(m => ({ role: m.sender === 'tutor' ? 'assistant' : 'user', content: m.text })),
       }),
     }).catch(() => {});
-  }, [conversation, selectedSubject, selectedLanguage, sessions, userId]);
+  }, [conversation, selectedSubject, selectedLanguage, sessions, activeUserId, sessionId, onSessionComplete]);
 
   const terminateSession = useCallback((preserveMessage) => {
     if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
@@ -205,9 +213,9 @@ export default function VoiceAgentView({ onClose, initialSession }) {
             ? `ws://localhost:5001`
             : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
         );
-        const voiceSid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const voiceSid = sessionId || voiceSessionIdRef.current || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
         voiceSessionIdRef.current = voiceSid;
-        const wsUrl = `${wsHost}/api/ws?language=${selectedLanguage}&subject=${selectedSubject}&sessionId=${voiceSid}&userId=${userId}`;
+        const wsUrl = `${wsHost}/api/ws?language=${selectedLanguage}&subject=${selectedSubject}&sessionId=${voiceSid}&userId=${activeUserId}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
@@ -290,7 +298,7 @@ export default function VoiceAgentView({ onClose, initialSession }) {
       saveCurrentSession();
       terminateSession();
     }
-  }, [connectionStatus, selectedLanguage, selectedSubject, stopAllAudioPlaybacks, terminateSession, playPcmAudioChunk, saveCurrentSession]);
+  }, [connectionStatus, selectedLanguage, selectedSubject, stopAllAudioPlaybacks, terminateSession, playPcmAudioChunk, saveCurrentSession, sessionId, activeUserId]);
 
   const clearTranscriptLog = useCallback(() => {
     setConversation([]);
@@ -444,7 +452,16 @@ export default function VoiceAgentView({ onClose, initialSession }) {
   }, []);
 
   return (
-    <div style={{
+    <div style={inline ? {
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      background: 'transparent',
+      color: T.text,
+      fontFamily: 'var(--font-outfit), "Segoe UI", sans-serif',
+      overflow: 'hidden'
+    } : {
       position: 'fixed',
       top: 0,
       bottom: 0,
@@ -457,101 +474,103 @@ export default function VoiceAgentView({ onClose, initialSession }) {
       fontFamily: 'var(--font-outfit), "Segoe UI", sans-serif',
       transition: 'left 0.2s ease'
     }}>
-      <MobileNav title="Voice Tutor" accent={T.accent} items={voiceNavItems} extras={voiceExtras} zBase={isMobile ? 10 : 0} />
+      {!inline && <MobileNav title="Voice Tutor" accent={T.accent} items={voiceNavItems} extras={voiceExtras} zBase={isMobile ? 10 : 0} />}
 
       {/* Main Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
         {/* Header */}
-        <header style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: isMobile ? '0 12px' : '0 24px', height: isMobile ? 48 : 56,
-          background: T.s1, borderBottom: `1px solid ${T.border}`, flexShrink: 0
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12 }}>
-            <button
-              onClick={onClose}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: 'transparent',
-                border: 'none',
-                color: T.muted,
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: 600,
-                padding: '4px 8px',
-                borderRadius: 6,
-                fontFamily: 'inherit',
-                transition: 'all 0.2s',
-                marginRight: 4
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = T.text; e.currentTarget.style.background = T.s2; }}
-              onMouseLeave={e => { e.currentTarget.style.color = T.muted; e.currentTarget.style.background = 'transparent'; }}
-              title="Back to Text Chat"
-            >
-              <ArrowLeft size={16} />
-              {!isMobile && <span>Back</span>}
-            </button>
-            <h2 style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, color: T.text, margin: 0 }}>
-              {SUBJECTS.find((s) => s.id === selectedSubject)?.name || 'General Tutor'}
-            </h2>
-            <div style={{ width: 1, height: 16, background: T.dim }} />
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '4px 10px', background: T.s2, borderRadius: 20
-            }}>
+        {!inline && (
+          <header style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: isMobile ? '0 12px' : '0 24px', height: isMobile ? 48 : 56,
+            background: T.s1, borderBottom: `1px solid ${T.border}`, flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12 }}>
+              <button
+                onClick={onClose}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: 'transparent',
+                  border: 'none',
+                  color: T.muted,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  fontFamily: 'inherit',
+                  transition: 'all 0.2s',
+                  marginRight: 4
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = T.text; e.currentTarget.style.background = T.s2; }}
+                onMouseLeave={e => { e.currentTarget.style.color = T.muted; e.currentTarget.style.background = 'transparent'; }}
+                title="Back to Text Chat"
+              >
+                <ArrowLeft size={16} />
+                {!isMobile && <span>Back</span>}
+              </button>
+              <h2 style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, color: T.text, margin: 0 }}>
+                {SUBJECTS.find((s) => s.id === selectedSubject)?.name || 'General Tutor'}
+              </h2>
+              <div style={{ width: 1, height: 16, background: T.dim }} />
               <div style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: isActive ? T.green : connectionStatus === 'connecting' ? T.amber : T.dim,
-                animation: connectionStatus === 'connecting' ? 'pulse 1.5s infinite' : 'none'
-              }} />
-              <span style={{ fontSize: 10, color: T.muted, fontWeight: 600, letterSpacing: '0.04em' }}>
-                {connectionStatus === 'disconnected' && 'Voice Offline'}
-                {connectionStatus === 'connecting' && 'Connecting...'}
-                {connectionStatus === 'connected' && 'Voice Mode Active'}
-                {connectionStatus === 'tutor-speaking' && 'Tutor Speaking'}
-                {connectionStatus === 'error' && 'Error'}
-              </span>
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', background: T.s2, borderRadius: 20
+              }}>
+                <div style={{
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: isActive ? T.green : connectionStatus === 'connecting' ? T.amber : T.dim,
+                  animation: connectionStatus === 'connecting' ? 'pulse 1.5s infinite' : 'none'
+                }} />
+                <span style={{ fontSize: 10, color: T.muted, fontWeight: 600, letterSpacing: '0.04em' }}>
+                  {connectionStatus === 'disconnected' && 'Voice Offline'}
+                  {connectionStatus === 'connecting' && 'Connecting...'}
+                  {connectionStatus === 'connected' && 'Voice Mode Active'}
+                  {connectionStatus === 'tutor-speaking' && 'Tutor Speaking'}
+                  {connectionStatus === 'error' && 'Error'}
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8 }}>
-            {!isMobile && (<React.Fragment>
-              <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
-                disabled={isActive}
-                style={{
-                  background: T.s2, color: T.muted, fontSize: 11, fontWeight: 600,
-                  border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px',
-                  cursor: isActive ? 'not-allowed' : 'pointer', outline: 'none',
-                  fontFamily: 'inherit', opacity: isActive ? 0.5 : 1
-                }}
-              >
-                {LANGUAGES.map((lang) => (
-                  <option key={lang.id} value={lang.id} style={{ background: T.s1, color: T.text }}>
-                    {lang.flag} {lang.name}
-                  </option>
-                ))}
-              </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8 }}>
+              {!isMobile && (<React.Fragment>
+                <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
+                  disabled={isActive}
+                  style={{
+                    background: T.s2, color: T.muted, fontSize: 11, fontWeight: 600,
+                    border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px',
+                    cursor: isActive ? 'not-allowed' : 'pointer', outline: 'none',
+                    fontFamily: 'inherit', opacity: isActive ? 0.5 : 1
+                  }}
+                >
+                  {LANGUAGES.map((lang) => (
+                    <option key={lang.id} value={lang.id} style={{ background: T.s1, color: T.text }}>
+                      {lang.flag} {lang.name}
+                    </option>
+                  ))}
+                </select>
 
-              <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)}
-                disabled={isActive}
-                style={{
-                  background: T.s2, color: T.muted, fontSize: 11, fontWeight: 600,
-                  border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px',
-                  cursor: isActive ? 'not-allowed' : 'pointer', outline: 'none',
-                  fontFamily: 'inherit', opacity: isActive ? 0.5 : 1
-                }}
-              >
-                {SUBJECTS.map((sub) => (
-                  <option key={sub.id} value={sub.id} style={{ background: T.s1, color: T.text }}>
-                    {sub.name}
-                  </option>
-                ))}
-              </select>
-            </React.Fragment>)}
-          </div>
-        </header>
+                <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)}
+                  disabled={isActive}
+                  style={{
+                    background: T.s2, color: T.muted, fontSize: 11, fontWeight: 600,
+                    border: `1px solid ${T.border}`, borderRadius: 8, padding: '6px 10px',
+                    cursor: isActive ? 'not-allowed' : 'pointer', outline: 'none',
+                    fontFamily: 'inherit', opacity: isActive ? 0.5 : 1
+                  }}
+                >
+                  {SUBJECTS.map((sub) => (
+                    <option key={sub.id} value={sub.id} style={{ background: T.s1, color: T.text }}>
+                      {sub.name}
+                    </option>
+                  ))}
+                </select>
+              </React.Fragment>)}
+            </div>
+          </header>
+        )}
 
         {/* Chat Messages — hidden when empty so voice interface can center */}
         {conversation.length > 0 && <VoiceChatMessages conversation={conversation} />}
@@ -564,6 +583,22 @@ export default function VoiceAgentView({ onClose, initialSession }) {
           justifyContent: conversation.length === 0 ? 'center' : undefined,
           borderTop: `1px solid ${T.border}`, background: T.s1,
         }}>
+          {inline && (
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 12, width: '100%', flexWrap: 'wrap' }}>
+              <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)} disabled={isActive}
+                style={{ background: T.s2, color: T.muted, fontSize: 11, fontWeight: 600, border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 10px', cursor: isActive ? 'not-allowed' : 'pointer', outline: 'none', fontFamily: 'inherit', opacity: isActive ? 0.5 : 1 }}>
+                {LANGUAGES.map((lang) => (
+                  <option key={lang.id} value={lang.id} style={{ background: T.s1, color: T.text }}>{lang.flag} {lang.name}</option>
+                ))}
+              </select>
+              <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)} disabled={isActive}
+                style={{ background: T.s2, color: T.muted, fontSize: 11, fontWeight: 600, border: `1px solid ${T.border}`, borderRadius: 8, padding: '5px 10px', cursor: isActive ? 'not-allowed' : 'pointer', outline: 'none', fontFamily: 'inherit', opacity: isActive ? 0.5 : 1 }}>
+                {SUBJECTS.map((sub) => (
+                  <option key={sub.id} value={sub.id} style={{ background: T.s1, color: T.text }}>{sub.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* Status Message */}
           <p style={{ fontSize: 11, color: T.muted, textAlign: 'center', margin: '0 0 8px' }}>{statusMessage}</p>
 
@@ -666,16 +701,20 @@ export default function VoiceAgentView({ onClose, initialSession }) {
         </div>
 
         {/* Background blurs */}
-        <div style={{
-          position: 'fixed', top: 0, left: isMobile ? 0 : 260, width: isMobile ? 200 : 400, height: isMobile ? 200 : 400,
-          background: `${T.purple}08`, borderRadius: '50%', filter: 'blur(100px)',
-          pointerEvents: 'none', transform: 'translate(-50%, -50%)', zIndex: -1
-        }} />
-        <div style={{
-          position: 'fixed', bottom: 0, right: 0, width: isMobile ? 150 : 300, height: isMobile ? 150 : 300,
-          background: `${T.green}05`, borderRadius: '50%', filter: 'blur(80px)',
-          pointerEvents: 'none', transform: 'translate(30%, 30%)', zIndex: -1
-        }} />
+        {!inline && (
+          <React.Fragment>
+            <div style={{
+              position: 'fixed', top: 0, left: isMobile ? 0 : 260, width: isMobile ? 200 : 400, height: isMobile ? 200 : 400,
+              background: `${T.purple}08`, borderRadius: '50%', filter: 'blur(100px)',
+              pointerEvents: 'none', transform: 'translate(-50%, -50%)', zIndex: -1
+            }} />
+            <div style={{
+              position: 'fixed', bottom: 0, right: 0, width: isMobile ? 150 : 300, height: isMobile ? 150 : 300,
+              background: `${T.green}05`, borderRadius: '50%', filter: 'blur(80px)',
+              pointerEvents: 'none', transform: 'translate(30%, 30%)', zIndex: -1
+            }} />
+          </React.Fragment>
+        )}
       </div>
     </div>
   );

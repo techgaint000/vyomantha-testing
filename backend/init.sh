@@ -41,6 +41,7 @@ EOF
         
         echo "Bootstrapping student and admin users..."
         bench --site lms.localhost execute "exec(open('/workspace/create_students.py').read())"
+        bench --site lms.localhost execute "exec(open('/workspace/grant_question_perm.py').read())"
         
         # Create lock file after successful completion
         touch "$MIGRATE_LOCK"
@@ -51,11 +52,20 @@ EOF
     # Restore Procfile web service to default (no host arguments, only port)
     sed -i 's/bench serve.*/bench serve --port 8000/g' ./Procfile
     
+    # Consolidate background workers to run in a single process (saves ~160MB+ RAM)
+    if grep -q "worker_" ./Procfile; then
+        sed -i '/worker_/d' ./Procfile
+        echo "worker: bench worker --queue short,default,long" >> ./Procfile
+    fi
+    
     # Install queue worker dependencies
-    ./env/bin/pip install pypdf boto3 pymysql || true
-    # Start the background queue worker
-    echo "Starting background queue worker..."
-    ./env/bin/python /workspace/queue_worker.py &
+    ./env/bin/pip install pypdf boto3 pymysql python-Levenshtein || true
+    # Start the background queue worker (supports scaling via env var)
+    CONCURRENCY=${QUEUE_WORKER_CONCURRENCY:-2}
+    echo "Starting $CONCURRENCY background queue workers..."
+    for i in $(seq 1 $CONCURRENCY); do
+        ./env/bin/python /workspace/queue_worker.py &
+    done
     
     bench start
     exit 0
@@ -63,9 +73,17 @@ fi
 
 echo "Creating new bench..."
 
-# Wait for MariaDB to be fully ready
-echo "Waiting for MariaDB database to be ready..."
-python3 -c "
+USE_REMOTE_DB=0
+if [ -n "$DB_HOST" ] && [ "$DB_HOST" != "mariadb" ] && [ "$DB_HOST" != "127.0.0.1" ]; then
+    USE_REMOTE_DB=1
+fi
+
+if [ "$USE_REMOTE_DB" -eq 1 ]; then
+    echo "Using remote database: $DB_HOST. Skipping local MariaDB readiness check."
+else
+    # Wait for MariaDB to be fully ready
+    echo "Waiting for MariaDB database to be ready..."
+    python3 -c "
 import socket
 import time
 while True:
@@ -79,6 +97,8 @@ while True:
         print('Waiting for MariaDB to start...')
         time.sleep(2)
 "
+fi
+
 
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
@@ -98,8 +118,12 @@ bench set-config -g allow_cors "http://localhost:3000"
 bench set-config -g ignore_csrf 1
 
 # Remove redis and watch from Procfile since Docker handles them separately
-sed -i '/redis/d' ./Procfile
-sed -i '/watch/d' ./Procfile
+    sed -i '/redis/d' ./Procfile
+    sed -i '/watch/d' ./Procfile
+
+    # Consolidate background workers to run in a single process (saves ~160MB+ RAM)
+    sed -i '/worker_/d' ./Procfile
+    echo "worker: bench worker --queue short,default,long" >> ./Procfile
 
 # Keep default bench serve --port 8000 (no host modification needed)
 
@@ -172,15 +196,19 @@ bench --site lms.localhost migrate || true
 # Bootstrap student and admin users
 echo "Bootstrapping student and admin users..."
 bench --site lms.localhost execute "exec(open('/workspace/create_students.py').read())"
+bench --site lms.localhost execute "exec(open('/workspace/grant_question_perm.py').read())"
 
 # Create lock file after successful completion
 touch "sites/lms.localhost/.migrated"
 
 # Install queue worker dependencies
-./env/bin/pip install pypdf boto3 pymysql || true
-# Start the background queue worker
-echo "Starting background queue worker..."
-./env/bin/python /workspace/queue_worker.py &
+./env/bin/pip install pypdf boto3 pymysql python-Levenshtein || true
+# Start the background queue worker (supports scaling via env var)
+CONCURRENCY=${QUEUE_WORKER_CONCURRENCY:-2}
+echo "Starting $CONCURRENCY background queue workers..."
+for i in $(seq 1 $CONCURRENCY); do
+    ./env/bin/python /workspace/queue_worker.py &
+done
 
 # Start the headless backend server
 bench start

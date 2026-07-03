@@ -131,7 +131,7 @@ export default function CoursePage() {
         }
       }
 
-      const enrolledStatus = await checkStudentEnrollment(course.id, email);
+      const enrolledStatus = enrolledCourseIds.includes(course.id) || await checkStudentEnrollment(course.id, email);
       setIsEnrolled(enrolledStatus);
 
       const details = await getCourseSyllabus(course.id);

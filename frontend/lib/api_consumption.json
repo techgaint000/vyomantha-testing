@@ -1,16 +1,18 @@
 {
   "api_calls": {
     "user-mqtp4apqu18l": 4,
-    "user-mr37w1i54r3j": 2,
-    "user-mr3hpqs19u4n": 5,
-    "user-mr3jh1ayotpv": 1
+    "user-mr37w1i54r3j": 7,
+    "user-mr3hpqs19u4n": 11,
+    "user-mr3jh1ayotpv": 1,
+    "user-mr4rhkqhaw6c": 4
   },
   "tokens_consumed": {
     "user-mqtp4apqu18l": 1712,
-    "user-mr37w1i54r3j": 568,
-    "user-mr3hpqs19u4n": 1318,
-    "user-mr3jh1ayotpv": 296
+    "user-mr37w1i54r3j": 2207,
+    "user-mr3hpqs19u4n": 3219,
+    "user-mr3jh1ayotpv": 296,
+    "user-mr4rhkqhaw6c": 1297
   },
-  "global_api_calls": 12,
-  "global_tokens_consumed": 3894
+  "global_api_calls": 27,
+  "global_tokens_consumed": 8731
 }

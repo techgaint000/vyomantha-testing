@@ -22,7 +22,7 @@ export function verifyJwt(token) {
     }
     
     // Compute expected signature
-    const secret = process.env.ENCRYPTION_KEY || '8kAnz-VWclIhMghrU8g_39K2setlLtLR_9PJL1BjRxY=';
+    const secret = process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || '8kAnz-VWclIhMghrU8g_39K2setlLtLR_9PJL1BjRxY=';
     const msg = `${headerB64}.${payloadB64}`;
     const expectedSig = crypto.createHmac('sha256', secret)
       .update(msg, 'utf8')
