@@ -172,6 +172,19 @@ try:
     
     if google_client_id and google_client_secret:
         print("Seeding Google Social Login Key...")
+        
+        # Dynamically determine the backend's external URL to support different servers
+        backend_url = (
+            os.environ.get("RENDER_EXTERNAL_URL") 
+            or os.environ.get("BACKEND_URL") 
+            or os.environ.get("FRAPPE_URL") 
+            or os.environ.get("NEXT_PUBLIC_FRAPPE_URL") 
+            or "https://vyomantha-testing.onrender.com"
+        )
+        backend_url = backend_url.rstrip("/")
+        redirect_url = f"{backend_url}/api/method/frappe.integrations.oauth2_logins.login_via_google"
+        print(f"Using dynamic Google OAuth Redirect URL: {redirect_url}")
+        
         if not frappe.db.exists("Social Login Key", "google"):
             doc = frappe.get_doc({
                 "doctype": "Social Login Key",
@@ -184,7 +197,7 @@ try:
                 "base_url": "https://accounts.google.com",
                 "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
                 "access_token_url": "https://oauth2.googleapis.com/token",
-                "redirect_url": "https://vyomanta.onrender.com/api/method/frappe.integrations.oauth2_logins.login_via_google",
+                "redirect_url": redirect_url,
                 "api_endpoint": "https://www.googleapis.com/oauth2/v2/userinfo",
                 "user_id_property": "email",
                 "custom_base_url": 1,
@@ -201,7 +214,7 @@ try:
             doc.base_url = "https://accounts.google.com"
             doc.authorize_url = "https://accounts.google.com/o/oauth2/v2/auth"
             doc.access_token_url = "https://oauth2.googleapis.com/token"
-            doc.redirect_url = "https://vyomanta.onrender.com/api/method/frappe.integrations.oauth2_logins.login_via_google"
+            doc.redirect_url = redirect_url
             doc.api_endpoint = "https://www.googleapis.com/oauth2/v2/userinfo"
             doc.sign_ups = "Allow"
             doc.save(ignore_permissions=True)
