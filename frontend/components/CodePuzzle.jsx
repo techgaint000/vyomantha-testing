@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { python } from '@codemirror/lang-python';
+import { html } from '@codemirror/lang-html';
 import { usePyodide } from '@/hooks/usePyodide';
 import {
   Play, Pause, Square, Trash2, CheckCircle, Loader2, Sparkles,
   ChevronLeft, ChevronRight, BookOpen, AlertCircle, X, Award, Zap,
-  Gamepad2, HelpCircle, ChevronDown, Check, Info, Code
+  Gamepad2, HelpCircle, ChevronDown, Check, Info, Code, Globe, HelpCircle as HelpIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal } from 'xterm';
@@ -16,8 +17,8 @@ import 'xterm/css/xterm.css';
 import { T } from '@/lib/lms-data';
 
 // --- CodeMirror 6 Error Decoration Widget Extension ---
-import { StateField, StateEffect } from "@codemirror/state";
-import { EditorView, Decoration, WidgetType } from "@codemirror/view";
+import { Decoration, WidgetType, StateField, StateEffect } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 
 const setErrorEffect = StateEffect.define();
 
@@ -88,8 +89,8 @@ const errorDecorationField = StateField.define({
   provide: (f) => EditorView.decorations.from(f)
 });
 
-// --- Puzzles Dataset ---
-const PUZZLES = [
+// --- Predefined Faculty Puzzles ---
+const FACULTY_PUZZLES = [
   {
     id: "find_max",
     title: "Find Largest Number in Array",
@@ -194,20 +195,101 @@ const PUZZLES = [
   }
 ];
 
-export default function CodePuzzle() {
-  const [selectedLanguage, setSelectedLanguage] = useState('python');
-  const [puzzleIndex, setPuzzleIndex] = useState(0);
-  const activePuzzle = PUZZLES[puzzleIndex];
+const STARTER_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: #ffffff;
+      color: #1e293b;
+      margin: 0;
+      padding: 30px;
+      text-align: center;
+    }
+    .card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 450px;
+      margin: 40px auto;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    h1 {
+      color: #3b82f6;
+      font-size: 24px;
+      margin-top: 0;
+    }
+    p {
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+  </style>
+</head>
+<body>
 
-  const [code, setCode] = useState(activePuzzle.starterCode);
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  <div class="card">
+    <h1>HTML Live Preview Sandbox</h1>
+    <p>Modify this HTML, add CSS classes, or write inline styles on the left to see changes instantly rendered here!</p>
+    <button onclick="changeMessage()">Click Me</button>
+    <h3 id="display-msg" style="margin-top: 20px; color: #10b981;"></h3>
+  </div>
+
+  <script>
+    function changeMessage() {
+      document.getElementById('display-msg').textContent = '🎉 JavaScript running in sandbox successfully!';
+    }
+  </script>
+
+</body>
+</html>`;
+
+export default function CodePuzzle() {
+  // Category Selector: 'programming' | 'html'
+  const [category, setCategory] = useState('programming');
+  const [selectedLanguage, setSelectedLanguage] = useState('python');
   
+  // HTML Editor & Preview states
+  const [htmlCode, setHtmlCode] = useState(STARTER_HTML);
+
+  // Programming Puzzle selectors
+  const [puzzleSource, setPuzzleSource] = useState('faculty'); // 'faculty' | 'ai'
+  const [facultyPuzzleIndex, setFacultyPuzzleIndex] = useState(0);
+  const [aiDifficulty, setAiDifficulty] = useState('beginner');
+
+  // AI Generated Puzzle State
+  const [aiGeneratedPuzzle, setAiGeneratedPuzzle] = useState(null);
+  const [isGeneratingPuzzle, setIsGeneratingPuzzle] = useState(false);
+
+  // Active puzzle resolver
+  const activePuzzle = puzzleSource === 'ai' ? aiGeneratedPuzzle : FACULTY_PUZZLES[facultyPuzzleIndex];
+
+  // Code & Progress step states
+  const [code, setCode] = useState(FACULTY_PUZZLES[0].starterCode);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+
   // Validation States
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState(null); // { line: number, message: string }
   const [stepPassed, setStepPassed] = useState(false);
 
-  // Layout Tab selection on the right
+  // Layout Tab selection on the right (for programming mode)
   const [activeRightTab, setActiveRightTab] = useState('guide'); // 'guide' | 'visualizer'
 
   // Visualizer execution states
@@ -217,7 +299,7 @@ export default function CodePuzzle() {
   const [isTracing, setIsTracing] = useState(false);
   const [traceError, setTraceError] = useState(null);
   const [playSpeed, setPlaySpeed] = useState(1500); // 1500ms, 1000ms, 500ms
-  
+
   // Terminal refs & resize layouts
   const terminalElRef = useRef(null);
   const terminalInstanceRef = useRef(null);
@@ -225,28 +307,30 @@ export default function CodePuzzle() {
   const playIntervalRef = useRef(null);
   const editorViewRef = useRef(null);
   const debounceTimerRef = useRef(null);
-  
+
   const [mainSplitPercent, setMainSplitPercent] = useState(52); // Left vs Right width percentage
   const [leftSplitPercent, setLeftSplitPercent] = useState(62); // Editor vs Terminal height percentage
   const isDraggingMainRef = useRef(false);
   const isDraggingLeftRef = useRef(false);
   const containerRef = useRef(null);
 
-  // Sync starter code when puzzle changes
+  // Sync starter code when active puzzle changes
   useEffect(() => {
-    setCode(activePuzzle.starterCode);
-    setCurrentStepIndex(0);
-    setValidationError(null);
-    setStepPassed(false);
-    setTraceData(null);
-    setTraceError(null);
-    if (terminalInstanceRef.current) {
-      terminalInstanceRef.current.clear();
-      terminalInstanceRef.current.writeln('\x1b[90mSelect steps and write code to begin.\x1b[0m');
+    if (category === 'programming') {
+      if (activePuzzle) {
+        setCode(activePuzzle.starterCode);
+        setStepPassed(false);
+        setValidationError(null);
+        setCurrentStepIndex(0);
+        setTraceData(null);
+        setTraceError(null);
+      } else {
+        setCode('# Generate a custom AI puzzle from the right-hand panel to start.');
+      }
     }
-  }, [puzzleIndex]);
+  }, [activePuzzle, category]);
 
-  // Handle language selector alerts
+  // Alert other languages placeholder
   const handleLanguageChange = (lang) => {
     if (lang !== 'python') {
       alert(`${lang.toUpperCase()} support is coming in the next MVP! For now, please use Python.`);
@@ -257,12 +341,12 @@ export default function CodePuzzle() {
 
   // Sync inline CodeMirror decorations when validation error updates
   useEffect(() => {
-    if (editorViewRef.current) {
+    if (category === 'programming' && editorViewRef.current) {
       editorViewRef.current.dispatch({
         effects: setErrorEffect.of(validationError)
       });
     }
-  }, [validationError]);
+  }, [validationError, category]);
 
   // Auto-play interval for execution visualizer
   useEffect(() => {
@@ -284,7 +368,7 @@ export default function CodePuzzle() {
 
   // Highlight and scroll CodeMirror editor line on active execution visualizer step
   useEffect(() => {
-    if (editorViewRef.current && traceData && traceData[currentStep]) {
+    if (category === 'programming' && editorViewRef.current && traceData && traceData[currentStep]) {
       const view = editorViewRef.current;
       const activeLine = traceData[currentStep].line;
       try {
@@ -299,13 +383,14 @@ export default function CodePuzzle() {
         console.warn("[Visualizer CodeMirror Sync] Error highlighting line:", e);
       }
     }
-  }, [currentStep, traceData]);
+  }, [currentStep, traceData, category]);
 
-  // Setup terminal
-  useEffect(() => {
+  // Setup terminal (for programming mode)
+  const initTerminal = () => {
     if (typeof window === 'undefined') return;
     if (!terminalElRef.current) return;
-    
+    if (terminalInstanceRef.current) return; // Already setup
+
     const term = new Terminal({
       cursorBlink: true,
       theme: {
@@ -321,18 +406,15 @@ export default function CodePuzzle() {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
-    const initTimer = setTimeout(() => {
-      if (!terminalElRef.current) return;
-      try {
-        term.open(terminalElRef.current);
-        terminalInstanceRef.current = term;
-        fitAddonRef.current = fitAddon;
-        fitAddon.fit();
-        term.writeln("\x1b[33mPython Terminal Ready.\x1b[0m");
-      } catch (e) {
-        console.warn("Failed to open terminal:", e);
-      }
-    }, 100);
+    try {
+      term.open(terminalElRef.current);
+      terminalInstanceRef.current = term;
+      fitAddonRef.current = fitAddon;
+      fitAddon.fit();
+      term.writeln("\x1b[33mPython Terminal Ready.\x1b[0m");
+    } catch (e) {
+      console.warn("Failed to open terminal:", e);
+    }
 
     const resizeObserver = new ResizeObserver(() => {
       if (terminalInstanceRef.current && fitAddonRef.current) {
@@ -341,19 +423,24 @@ export default function CodePuzzle() {
         } catch (e) {}
       }
     });
-    
     resizeObserver.observe(terminalElRef.current);
+  };
 
-    return () => {
-      clearTimeout(initTimer);
-      resizeObserver.disconnect();
-      try {
-        term.dispose();
-      } catch (e) {}
-      terminalInstanceRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, []);
+  useEffect(() => {
+    if (category === 'programming') {
+      // Delay initialization slightly to let DOM elements render
+      const timer = setTimeout(() => {
+        initTerminal();
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      if (terminalInstanceRef.current) {
+        terminalInstanceRef.current.dispose();
+        terminalInstanceRef.current = null;
+        fitAddonRef.current = null;
+      }
+    }
+  }, [category]);
 
   // --- Pyodide WebWorker hooks ---
   const onStdout = (text) => {
@@ -408,8 +495,9 @@ export default function CodePuzzle() {
     onTraceResult
   });
 
-  // --- API Validation Call ---
+  // --- API validation call ---
   const validateStep = async (codeToCheck, targetIndex) => {
+    if (!activePuzzle) return;
     setIsValidating(true);
     try {
       const response = await fetch('/api/code-puzzle/validate', {
@@ -417,7 +505,7 @@ export default function CodePuzzle() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: codeToCheck,
-          puzzleId: activePuzzle.id,
+          puzzleId: activePuzzle.id || "ai_generated",
           stepIndex: targetIndex,
           stepDescription: activePuzzle.steps[targetIndex].description,
           problemStatement: activePuzzle.description,
@@ -426,10 +514,7 @@ export default function CodePuzzle() {
       });
 
       const result = await response.json();
-      
-      if (result.error) {
-        throw new Error(result.error);
-      }
+      if (result.error) throw new Error(result.error);
 
       if (result.passed) {
         setValidationError(null);
@@ -443,16 +528,49 @@ export default function CodePuzzle() {
       }
     } catch (e) {
       console.error(e);
-      setValidationError({ line: 1, message: "Server validation failed. Try checking your syntax or names." });
+      setValidationError({ line: 1, message: "Validation check failed. Check syntax or structure." });
       setStepPassed(false);
     } finally {
       setIsValidating(false);
     }
   };
 
-  // --- Debounced Auto-Check triggers ---
-  const handleCodeChange = (newCode) => {
-    setCode(newCode);
+  // --- API Puzzle Generation call ---
+  const handleGenerateAiPuzzle = async () => {
+    setIsGeneratingPuzzle(true);
+    setAiGeneratedPuzzle(null);
+    setValidationError(null);
+    setStepPassed(false);
+    try {
+      const res = await fetch('/api/code-puzzle/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          difficulty: aiDifficulty,
+          language: selectedLanguage
+        })
+      });
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setAiGeneratedPuzzle(data);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to generate custom AI puzzle. Please try again.");
+    } finally {
+      setIsGeneratingPuzzle(false);
+    }
+  };
+
+  // --- Code editor changes ---
+  const handleCodeChange = (newVal) => {
+    if (category === 'html') {
+      setHtmlCode(newVal);
+      return;
+    }
+
+    setCode(newVal);
     setStepPassed(false);
     setValidationError(null);
 
@@ -462,11 +580,11 @@ export default function CodePuzzle() {
     }
 
     debounceTimerRef.current = setTimeout(() => {
-      validateStep(newCode, currentStepIndex);
+      validateStep(newVal, currentStepIndex);
     }, 2000);
   };
 
-  // Manual Trigger Check
+  // Manual trigger check
   const handleManualCheck = () => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -476,7 +594,7 @@ export default function CodePuzzle() {
 
   // Move to next step
   const handleNextStep = () => {
-    if (currentStepIndex < activePuzzle.steps.length - 1) {
+    if (activePuzzle && currentStepIndex < activePuzzle.steps.length - 1) {
       const nextIdx = currentStepIndex + 1;
       setCurrentStepIndex(nextIdx);
       setStepPassed(false);
@@ -494,22 +612,22 @@ export default function CodePuzzle() {
     validateStep(code, 0);
   };
 
-  // Execute current code in Terminal
+  // Execute code in Terminal
   const handleRunCode = () => {
-    if (!isReady || isRunning) return;
+    if (!isReady || isRunning || !activePuzzle) return;
     if (terminalInstanceRef.current) {
       terminalInstanceRef.current.clear();
       terminalInstanceRef.current.writeln('\x1b[90mExecuting python code...\x1b[0m');
     }
     
     // Append the visualizer/test call to execute the script in console
-    const fullCode = code + activePuzzle.defaultCall;
+    const fullCode = code + (activePuzzle.defaultCall || "");
     runCode(fullCode);
   };
 
   // Trace variables execution
   const handleVisualizeCode = () => {
-    if (!isReady || isRunning) return;
+    if (!isReady || isRunning || !activePuzzle) return;
     setIsTracing(true);
     setTraceData(null);
     setTraceError(null);
@@ -520,7 +638,7 @@ export default function CodePuzzle() {
     }
 
     // Append the call to trace the inner loop execution
-    const traceCode = code + activePuzzle.defaultCall;
+    const traceCode = code + (activePuzzle.defaultCall || "");
     runTrace(traceCode);
   };
 
@@ -545,8 +663,8 @@ export default function CodePuzzle() {
     if (container) {
       const rect = container.getBoundingClientRect();
       let percent = ((e.clientX - rect.left) / rect.width) * 100;
-      if (percent < 30) percent = 30;
-      if (percent > 70) percent = 70;
+      if (percent < 25) percent = 25;
+      if (percent > 75) percent = 75;
       setMainSplitPercent(percent);
     }
   };
@@ -877,68 +995,97 @@ export default function CodePuzzle() {
       
       {/* --- Top Header bar --- */}
       <div style={{ height: 56, padding: '0 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0C0F1C', zIndex: 10, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Gamepad2 size={20} color="#5B8CF8" />
-          <h1 style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>Code Puzzle</h1>
+          <h1 style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>Workspace Sandbox</h1>
           
-          {/* Programming language selector tab pills */}
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 3, marginLeft: 16 }}>
-            {['python', 'javascript', 'java'].map((lang) => (
-              <button
-                key={lang}
-                onClick={() => handleLanguageChange(lang)}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: selectedLanguage === lang ? '#1E293B' : 'transparent',
-                  color: selectedLanguage === lang ? '#5B8CF8' : '#647298',
-                  textTransform: 'capitalize',
-                  transition: 'all 0.15s'
-                }}
-              >
-                {lang}
-              </button>
-            ))}
+          {/* Main Category Dropdown: Programming Languages vs HTML */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 16 }}>
+            <Globe size={14} color="#647298" />
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={{
+                background: '#131824',
+                color: '#5B8CF8',
+                border: '1px solid rgba(91, 140, 248, 0.2)',
+                borderRadius: 6,
+                padding: '4px 8px',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer',
+                outline: 'none',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em'
+              }}
+            >
+              <option value="programming">💻 Programming Languages</option>
+              <option value="html">🌐 HTML Workspace</option>
+            </select>
           </div>
+
+          {/* Nested programming languages selector (Only visible if category === 'programming') */}
+          {category === 'programming' && (
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 3, marginLeft: 12 }}>
+              {['python', 'javascript', 'java'].map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => handleLanguageChange(lang)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    border: 'none',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: selectedLanguage === lang ? '#1E293B' : 'transparent',
+                    color: selectedLanguage === lang ? '#5B8CF8' : '#647298',
+                    textTransform: 'capitalize',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  {lang}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Puzzle Selector Dropdown */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11.5, color: '#647298', fontWeight: 600 }}>Active Puzzle:</span>
-          <select
-            value={puzzleIndex}
-            onChange={(e) => setPuzzleIndex(parseInt(e.target.value))}
-            style={{
-              background: '#131824',
-              color: '#DDE3F2',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 6,
-              padding: '5px 12px',
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-              outline: 'none'
-            }}
-          >
-            {PUZZLES.map((p, idx) => (
-              <option key={p.id} value={idx}>
-                {idx + 1}. {p.title}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Dropdown selectors for Faculty Puzzles (Only visible if category === 'programming' and source === 'faculty') */}
+        {category === 'programming' && puzzleSource === 'faculty' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11.5, color: '#647298', fontWeight: 600 }}>Predefined Puzzles:</span>
+            <select
+              value={facultyPuzzleIndex}
+              onChange={(e) => setFacultyPuzzleIndex(parseInt(e.target.value))}
+              style={{
+                background: '#131824',
+                color: '#DDE3F2',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 6,
+                padding: '5px 12px',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              {FACULTY_PUZZLES.map((p, idx) => (
+                <option key={p.id} value={idx}>
+                  {idx + 1}. {p.title}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* --- Main split content area --- */}
       <div ref={containerRef} style={{ display: 'flex', flex: 1, height: 'calc(100% - 56px)', overflow: 'hidden' }}>
         
-        {/* --- LEFT COLUMN: Editor + Terminal --- */}
+        {/* --- LEFT COLUMN: Editor + Terminal (Or Editor only for HTML) --- */}
         <div style={{
-          width: `${mainSplitPercent}%`,
+          width: category === 'html' ? '50%' : `${mainSplitPercent}%`,
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
@@ -946,558 +1093,713 @@ export default function CodePuzzle() {
           borderRight: '1px solid rgba(255,255,255,0.06)',
           overflow: 'hidden'
         }}>
-          {/* Top Half: CodeMirror Code Editor */}
-          <div style={{ height: `${leftSplitPercent}%`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '8px 16px', background: '#080A0E', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 10, color: '#647298', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Source Code Editor</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {!isReady && (
-                  <span style={{ fontSize: 10.5, color: '#F5A95B', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
-                    Loading environment...
-                  </span>
-                )}
-                {isReady && (
-                  <span style={{ fontSize: 10.5, color: '#22C5A0', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <CheckCircle size={11} /> Environment Ready
-                  </span>
-                )}
+          {category === 'html' ? (
+            /* --- HTML Mode: Full height editor --- */
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ padding: '8px 16px', background: '#080A0E', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                <span style={{ fontSize: 10, color: '#647298', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>HTML Code Editor</span>
+                <span style={{ fontSize: 10.5, color: '#3b82f6', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Globe size={11} /> Live Preview Active
+                </span>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', background: '#07080F' }}>
+                <CodeMirror
+                  value={htmlCode}
+                  theme="dark"
+                  extensions={[html()]}
+                  onChange={(value) => handleCodeChange(value)}
+                  style={{ fontSize: 13, fontFamily: 'monospace' }}
+                />
               </div>
             </div>
+          ) : (
+            /* --- Programming Mode: Editor + Splitter + xterm Terminal --- */
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {/* Top Half: CodeMirror Code Editor */}
+              <div style={{ height: `${leftSplitPercent}%`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ padding: '8px 16px', background: '#080A0E', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <span style={{ fontSize: 10, color: '#647298', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Source Code Editor</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {!isReady && (
+                      <span style={{ fontSize: 10.5, color: '#F5A95B', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                        Loading environment...
+                      </span>
+                    )}
+                    {isReady && (
+                      <span style={{ fontSize: 10.5, color: '#22C5A0', display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <CheckCircle size={11} /> Environment Ready
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-            {/* CodeMirror */}
-            <div style={{ flex: 1, overflowY: 'auto', background: '#07080F' }}>
-              <CodeMirror
-                value={code}
-                theme="dark"
-                extensions={[python(), errorDecorationField]}
-                onChange={(value) => handleCodeChange(value)}
-                onCreateEditor={(view) => {
-                  editorViewRef.current = view;
+                {/* CodeMirror */}
+                <div style={{ flex: 1, overflowY: 'auto', background: '#07080F' }}>
+                  <CodeMirror
+                    value={code}
+                    theme="dark"
+                    extensions={[python(), errorDecorationField]}
+                    onChange={(value) => handleCodeChange(value)}
+                    onCreateEditor={(view) => {
+                      editorViewRef.current = view;
+                    }}
+                    style={{ fontSize: 13, fontFamily: 'monospace' }}
+                  />
+                </div>
+
+                {/* Toolbar Panel */}
+                <div style={{ padding: '8px 16px', background: '#080A0E', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={handleRunCode}
+                      disabled={!isReady || isRunning || isTracing || !activePuzzle}
+                      style={{
+                        background: (!isReady || isRunning || isTracing || !activePuzzle) ? 'rgba(255,255,255,0.04)' : '#22C5A0',
+                        color: '#000',
+                        border: 'none',
+                        padding: '5px 12px',
+                        borderRadius: 5,
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        cursor: (!isReady || isRunning || isTracing || !activePuzzle) ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        opacity: (!isReady || isRunning || isTracing || !activePuzzle) ? 0.5 : 1
+                      }}
+                    >
+                      <Play size={11} fill="#000" />
+                      Run Code
+                    </button>
+                    <button
+                      onClick={handleVisualizeCode}
+                      disabled={!isReady || isRunning || isTracing || !activePuzzle}
+                      style={{
+                        background: (!isReady || isRunning || isTracing || !activePuzzle) ? 'rgba(255,255,255,0.04)' : '#5B8CF8',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '5px 12px',
+                        borderRadius: 5,
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        cursor: (!isReady || isRunning || isTracing || !activePuzzle) ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        opacity: (!isReady || isRunning || isTracing || !activePuzzle) ? 0.5 : 1
+                      }}
+                    >
+                      <Zap size={11} fill="currentColor" />
+                      Visualize Code
+                    </button>
+                  </div>
+
+                  {/* Step verification button triggers */}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={handleManualCheck}
+                      disabled={isValidating || !activePuzzle}
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: '#DDE3F2',
+                        padding: '4px 10px',
+                        borderRadius: 5,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: (!activePuzzle) ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        opacity: (!activePuzzle) ? 0.5 : 1
+                      }}
+                    >
+                      {isValidating && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+                      Check Step
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Left Column Resizer handle */}
+              <div
+                onMouseDown={handleLeftMouseDown}
+                style={{
+                  height: 5,
+                  cursor: 'row-resize',
+                  background: isDraggingLeftRef.current ? 'rgba(91, 140, 248, 0.4)' : 'rgba(255, 255, 255, 0.08)',
+                  zIndex: 10,
+                  width: '100%',
+                  flexShrink: 0,
+                  transition: 'background 0.2s'
                 }}
-                style={{ fontSize: 13, fontFamily: 'monospace' }}
               />
-            </div>
 
-            {/* Toolbar Panel */}
-            <div style={{ padding: '8px 16px', background: '#080A0E', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={handleRunCode}
-                  disabled={!isReady || isRunning || isTracing}
-                  style={{
-                    background: (!isReady || isRunning || isTracing) ? 'rgba(255,255,255,0.04)' : '#22C5A0',
-                    color: '#000',
-                    border: 'none',
-                    padding: '5px 12px',
-                    borderRadius: 5,
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                    cursor: (!isReady || isRunning || isTracing) ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    opacity: (!isReady || isRunning || isTracing) ? 0.5 : 1
-                  }}
-                >
-                  <Play size={11} fill="#000" />
-                  Run Code
-                </button>
-                <button
-                  onClick={handleVisualizeCode}
-                  disabled={!isReady || isRunning || isTracing}
-                  style={{
-                    background: (!isReady || isRunning || isTracing) ? 'rgba(255,255,255,0.04)' : '#5B8CF8',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '5px 12px',
-                    borderRadius: 5,
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                    cursor: (!isReady || isRunning || isTracing) ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    opacity: (!isReady || isRunning || isTracing) ? 0.5 : 1
-                  }}
-                >
-                  <Zap size={11} fill="currentColor" />
-                  Visualize Code
-                </button>
-              </div>
-
-              {/* Step verification button triggers */}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  onClick={handleManualCheck}
-                  disabled={isValidating}
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#DDE3F2',
-                    padding: '4px 10px',
-                    borderRadius: 5,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4
-                  }}
-                >
-                  {isValidating && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
-                  Check Step
-                </button>
+              {/* Bottom Half: Console Terminal */}
+              <div style={{ height: `${100 - leftSplitPercent}%`, display: 'flex', flexDirection: 'column', background: '#040508', overflow: 'hidden' }}>
+                <div style={{ padding: '6px 16px', background: '#080A0E', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <span style={{ fontSize: 9.5, color: '#647298', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Console Terminal</span>
+                  <button
+                    onClick={handleClearTerminal}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#647298',
+                      cursor: 'pointer',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 3
+                    }}
+                  >
+                    <Trash2 size={10} /> Clear
+                  </button>
+                </div>
+                <div ref={terminalElRef} style={{ flex: 1, padding: 8, overflow: 'hidden' }} />
               </div>
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Left Column Resizer handle */}
+        {/* Column Divider Resizer handle (Only shown for Programming Category) */}
+        {category === 'programming' && (
           <div
-            onMouseDown={handleLeftMouseDown}
+            onMouseDown={handleMainMouseDown}
             style={{
-              height: 5,
-              cursor: 'row-resize',
-              background: isDraggingLeftRef.current ? 'rgba(91, 140, 248, 0.4)' : 'rgba(255, 255, 255, 0.08)',
+              width: 5,
+              cursor: 'col-resize',
+              background: isDraggingMainRef.current ? 'rgba(91, 140, 248, 0.4)' : 'rgba(255, 255, 255, 0.08)',
               zIndex: 10,
-              width: '100%',
               flexShrink: 0,
               transition: 'background 0.2s'
             }}
           />
+        )}
 
-          {/* Bottom Half: Console Terminal */}
-          <div style={{ height: `${100 - leftSplitPercent}%`, display: 'flex', flexDirection: 'column', background: '#040508', overflow: 'hidden' }}>
-            <div style={{ padding: '6px 16px', background: '#080A0E', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 9.5, color: '#647298', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Console Terminal</span>
-              <button
-                onClick={handleClearTerminal}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#647298',
-                  cursor: 'pointer',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 3
-                }}
-              >
-                <Trash2 size={10} /> Clear
-              </button>
-            </div>
-            <div ref={terminalElRef} style={{ flex: 1, padding: 8, overflow: 'hidden' }} />
-          </div>
-        </div>
-
-        {/* Column Divider Resizer handle */}
-        <div
-          onMouseDown={handleMainMouseDown}
-          style={{
-            width: 5,
-            cursor: 'col-resize',
-            background: isDraggingMainRef.current ? 'rgba(91, 140, 248, 0.4)' : 'rgba(255, 255, 255, 0.08)',
-            zIndex: 10,
-            flexShrink: 0,
-            transition: 'background 0.2s'
-          }}
-        />
-
-        {/* --- RIGHT COLUMN: Guide & Visualizer tabs --- */}
+        {/* --- RIGHT COLUMN: Guide/Visualizer or HTML Iframe --- */}
         <div style={{
-          width: `${100 - mainSplitPercent}%`,
+          width: category === 'html' ? '50%' : `${100 - mainSplitPercent}%`,
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          background: '#040508',
+          background: '#ffffff', // default white background for HTML Iframe or dark background for programming
           overflow: 'hidden'
         }}>
-          
-          {/* Tab selectors */}
-          <div style={{ height: 44, display: 'flex', background: '#080A0E', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-            <button
-              onClick={() => setActiveRightTab('guide')}
+          {category === 'html' ? (
+            /* --- HTML Mode: Browser Live Preview Iframe (White background) --- */
+            <iframe
+              srcDoc={htmlCode}
+              title="HTML Sandbox Live Preview"
+              sandbox="allow-scripts"
               style={{
-                flex: 1,
+                width: '100%',
+                height: '100%',
                 border: 'none',
-                borderBottom: `2px solid ${activeRightTab === 'guide' ? '#5B8CF8' : 'transparent'}`,
-                background: activeRightTab === 'guide' ? 'rgba(91, 140, 248, 0.03)' : 'transparent',
-                color: activeRightTab === 'guide' ? '#5B8CF8' : '#647298',
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                transition: 'all 0.15s'
+                background: '#ffffff'
               }}
-            >
-              <BookOpen size={13} />
-              Guide Wizard
-            </button>
-            <button
-              onClick={() => setActiveRightTab('visualizer')}
-              style={{
-                flex: 1,
-                border: 'none',
-                borderBottom: `2px solid ${activeRightTab === 'visualizer' ? '#F5A95B' : 'transparent'}`,
-                background: activeRightTab === 'visualizer' ? 'rgba(245, 169, 91, 0.03)' : 'transparent',
-                color: activeRightTab === 'visualizer' ? '#F5A95B' : '#647298',
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                transition: 'all 0.15s'
-              }}
-            >
-              <Zap size={13} fill={activeRightTab === 'visualizer' ? 'currentColor' : 'none'} />
-              Variables Visualizer
-            </button>
-          </div>
+            />
+          ) : (
+            /* --- Programming Mode: Guide Wizard & Variables Visualizer --- */
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#040508', overflow: 'hidden' }}>
+              
+              {/* Tab Selectors */}
+              <div style={{ height: 44, display: 'flex', background: '#080A0E', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+                <button
+                  onClick={() => setActiveRightTab('guide')}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    borderBottom: `2px solid ${activeRightTab === 'guide' ? '#5B8CF8' : 'transparent'}`,
+                    background: activeRightTab === 'guide' ? 'rgba(91, 140, 248, 0.03)' : 'transparent',
+                    color: activeRightTab === 'guide' ? '#5B8CF8' : '#647298',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <BookOpen size={13} />
+                  Guide Wizard
+                </button>
+                <button
+                  onClick={() => setActiveRightTab('visualizer')}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    borderBottom: `2px solid ${activeRightTab === 'visualizer' ? '#F5A95B' : 'transparent'}`,
+                    background: activeRightTab === 'visualizer' ? 'rgba(245, 169, 91, 0.03)' : 'transparent',
+                    color: activeRightTab === 'visualizer' ? '#F5A95B' : '#647298',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <Zap size={13} fill={activeRightTab === 'visualizer' ? 'currentColor' : 'none'} />
+                  Variables Visualizer
+                </button>
+              </div>
 
-          {/* Scrolling Content Canvas */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} className="sandbox-scroll">
-            
-            {/* TAB 1: Guide Wizard */}
-            {activeRightTab === 'guide' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Scrolling Content Canvas */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} className="sandbox-scroll bg-dark-theme-panel">
                 
-                {/* Puzzle Statement Card */}
-                <div style={{ padding: 14, background: '#0C0F1C', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <Award size={16} color="#5B8CF8" />
-                    <span style={{ fontSize: 11, color: '#647298', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Problem Objective</span>
-                  </div>
-                  <h3 style={{ fontSize: 14.5, fontWeight: 700, margin: '0 0 6px 0', color: '#F8FAFC' }}>{activePuzzle.title}</h3>
-                  <p style={{ fontSize: 12.5, color: '#8892B0', margin: 0, lineHeight: 1.5 }}>{activePuzzle.description}</p>
-                </div>
-
-                {/* Steps Wizard Progress Stack */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: '#647298', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Step-by-step guidance</span>
-                    <button
-                      onClick={handleResetSteps}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#F55B6B',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Reset Steps
-                    </button>
-                  </div>
-
-                  {activePuzzle.steps.map((step, idx) => {
-                    const isCompleted = idx < currentStepIndex;
-                    const isActive = idx === currentStepIndex;
-                    const isLocked = idx > currentStepIndex;
-
-                    let stepBorderColor = 'rgba(255,255,255,0.05)';
-                    let stepBg = 'rgba(255,255,255,0.01)';
-                    let numBg = 'rgba(255,255,255,0.06)';
-                    let numColor = '#647298';
-
-                    if (isCompleted) {
-                      stepBorderColor = 'rgba(34, 197, 160, 0.2)';
-                      stepBg = 'rgba(34, 197, 160, 0.03)';
-                      numBg = '#22C5A0';
-                      numColor = '#000';
-                    } else if (isActive) {
-                      if (validationError) {
-                        stepBorderColor = 'rgba(245, 91, 107, 0.3)';
-                        stepBg = 'rgba(245, 91, 107, 0.04)';
-                        numBg = '#F55B6B';
-                        numColor = '#fff';
-                      } else if (stepPassed) {
-                        stepBorderColor = 'rgba(34, 197, 160, 0.4)';
-                        stepBg = 'rgba(34, 197, 160, 0.05)';
-                        numBg = '#22C5A0';
-                        numColor = '#000';
-                      } else {
-                        stepBorderColor = 'rgba(91, 140, 248, 0.3)';
-                        stepBg = 'rgba(91, 140, 248, 0.04)';
-                        numBg = '#5B8CF8';
-                        numColor = '#000';
-                      }
-                    }
-
-                    return (
-                      <div
-                        key={step.id}
+                {/* TAB 1: Guide Wizard */}
+                {activeRightTab === 'guide' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    
+                    {/* Source Dropdown Card (Faculty vs AI Tutor) */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#0C0F1C', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 }}>
+                      <span style={{ fontSize: 11.5, color: '#8892B0', fontWeight: 700 }}>Exercise Provider:</span>
+                      <select
+                        value={puzzleSource}
+                        onChange={(e) => {
+                          setPuzzleSource(e.target.value);
+                          setValidationError(null);
+                          setStepPassed(false);
+                          setAiGeneratedPuzzle(null);
+                        }}
                         style={{
-                          padding: 12,
-                          background: stepBg,
-                          border: `1px solid ${stepBorderColor}`,
-                          borderRadius: 8,
-                          opacity: isLocked ? 0.4 : 1,
-                          display: 'flex',
-                          gap: 12,
-                          transition: 'all 0.2s',
-                          position: 'relative'
+                          background: '#131824',
+                          color: '#5B8CF8',
+                          border: '1px solid rgba(91, 140, 248, 0.2)',
+                          borderRadius: 6,
+                          padding: '4px 10px',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          outline: 'none'
                         }}
                       >
-                        {/* Step Index Circle */}
-                        <div style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: '50%',
-                          background: numBg,
-                          color: numColor,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 11,
-                          fontWeight: 800,
-                          flexShrink: 0,
-                          transition: 'all 0.2s'
-                        }}>
-                          {isCompleted ? <Check size={11} strokeWidth={3} /> : idx + 1}
-                        </div>
+                        <option value="faculty">🏫 Given by Faculty</option>
+                        <option value="ai">🤖 Given by AI TUTOR</option>
+                      </select>
+                    </div>
 
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{
-                              fontSize: 12.5,
-                              fontWeight: 700,
-                              color: isCompleted ? '#22C5A0' : isActive ? (validationError ? '#F55B6B' : '#F8FAFC') : '#647298'
-                            }}>
-                              {step.shortTitle}
-                            </span>
-                            {isActive && (
-                              <span style={{
-                                fontSize: 9.5,
-                                fontWeight: 800,
-                                textTransform: 'uppercase',
-                                color: validationError ? '#F55B6B' : stepPassed ? '#22C5A0' : '#5B8CF8'
-                              }}>
-                                {validationError ? 'Invalid Step' : stepPassed ? 'Step Passed' : 'Active Step'}
-                              </span>
-                            )}
+                    {/* AI Generator Panel (Only shown if puzzleSource === 'ai') */}
+                    {puzzleSource === 'ai' && (
+                      <div style={{ padding: 14, background: 'rgba(91, 140, 248, 0.03)', border: '1px solid rgba(91, 140, 248, 0.15)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Sparkles size={16} color="#5B8CF8" />
+                          <span style={{ fontSize: 11, color: '#8892B0', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>AI Tutor Config</span>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
+                            <span style={{ fontSize: 10.5, color: '#647298', fontWeight: 600 }}>Difficulty Level</span>
+                            <select
+                              value={aiDifficulty}
+                              onChange={(e) => setAiDifficulty(e.target.value)}
+                              style={{
+                                background: '#131824',
+                                color: '#DDE3F2',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: 6,
+                                padding: '5px 10px',
+                                fontSize: 11.5,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                outline: 'none'
+                              }}
+                            >
+                              <option value="beginner">🟢 Beginner</option>
+                              <option value="intermediate">🟡 Intermediate</option>
+                              <option value="advanced">🔴 Advanced</option>
+                            </select>
                           </div>
                           
-                          <p style={{
-                            fontSize: 12,
-                            color: isLocked ? '#3A4560' : isCompleted ? '#8892B0' : '#DDE3F2',
-                            margin: 0,
-                            lineHeight: 1.4
-                          }}>
-                            {step.description}
-                          </p>
-
-                          {/* Render step error message explicitly */}
-                          {isActive && validationError && (
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'flex-start',
-                              gap: 6,
-                              padding: '6px 10px',
-                              background: 'rgba(245, 91, 107, 0.05)',
-                              border: '1px solid rgba(245, 91, 107, 0.15)',
+                          <button
+                            onClick={handleGenerateAiPuzzle}
+                            disabled={isGeneratingPuzzle}
+                            style={{
+                              background: '#5B8CF8',
+                              color: '#000',
+                              border: 'none',
+                              padding: '8px 16px',
                               borderRadius: 6,
-                              marginTop: 4
-                            }}>
-                              <AlertCircle size={12} color="#F55B6B" style={{ marginTop: 2, flexShrink: 0 }} />
-                              <span style={{ fontSize: 11, color: '#F55B6B', lineHeight: 1.3 }}>
-                                Line {validationError.line}: {validationError.message}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Render success buttons to advance */}
-                          {isActive && stepPassed && (
-                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                              <button
-                                onClick={handleNextStep}
-                                style={{
-                                  background: '#22C5A0',
-                                  color: '#000',
-                                  border: 'none',
-                                  padding: '4px 10px',
-                                  borderRadius: 4,
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 3
-                                }}
-                              >
-                                Next Step
-                                <ChevronRight size={11} />
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Render final congratulations card */}
-                          {isActive && idx === activePuzzle.steps.length - 1 && stepPassed && (
-                            <div style={{
-                              padding: 8,
-                              background: 'rgba(34, 197, 160, 0.08)',
-                              border: '1px solid #22C5A0',
-                              borderRadius: 6,
-                              marginTop: 4,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: isGeneratingPuzzle ? 'not-allowed' : 'pointer',
                               display: 'flex',
-                              flexDirection: 'column',
-                              gap: 4
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#22C5A0', fontSize: 11.5, fontWeight: 800 }}>
-                                <Sparkles size={12} fill="currentColor" />
-                                CONGRATULATIONS!
+                              alignItems: 'center',
+                              gap: 4,
+                              marginTop: 15,
+                              opacity: isGeneratingPuzzle ? 0.6 : 1
+                            }}
+                          >
+                            {isGeneratingPuzzle ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={12} fill="currentColor" />}
+                            Generate AI Puzzle
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Loader Card during AI Generation */}
+                    {isGeneratingPuzzle && (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 10px', background: '#0C0F1C', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, color: '#647298', gap: 10 }}>
+                        <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} color="#5B8CF8" />
+                        <span style={{ fontSize: 13, color: '#DDE3F2', fontWeight: 600 }}>AI is composing your coding challenge...</span>
+                        <span style={{ fontSize: 11, maxWidth: 280, textAlign: 'center' }}>Creating dynamic step instructions, initial starter templates, and testing validations.</span>
+                      </div>
+                    )}
+
+                    {/* Active Puzzle Statement Card */}
+                    {!isGeneratingPuzzle && activePuzzle && (
+                      <div style={{ padding: 14, background: '#0C0F1C', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                          <Award size={16} color="#5B8CF8" />
+                          <span style={{ fontSize: 11, color: '#647298', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Problem Objective</span>
+                        </div>
+                        <h3 style={{ fontSize: 14.5, fontWeight: 700, margin: '0 0 6px 0', color: '#F8FAFC' }}>{activePuzzle.title}</h3>
+                        <p style={{ fontSize: 12.5, color: '#8892B0', margin: 0, lineHeight: 1.5 }}>{activePuzzle.description}</p>
+                      </div>
+                    )}
+
+                    {/* Placeholder when no AI puzzle is loaded */}
+                    {!isGeneratingPuzzle && puzzleSource === 'ai' && !aiGeneratedPuzzle && (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 10px', background: '#0C0F1C', border: '1px solid rgba(255,255,255,0.04)', borderRadius: 10, color: '#647298', gap: 8, textAlign: 'center' }}>
+                        <HelpIcon size={24} color="#647298" />
+                        <span style={{ fontSize: 12.5, color: '#DDE3F2', fontWeight: 600 }}>No AI Puzzle Generated Yet</span>
+                        <span style={{ fontSize: 11, maxWidth: 240 }}>Select a difficulty level above and click **Generate AI Puzzle** to begin learning.</span>
+                      </div>
+                    )}
+
+                    {/* Steps Wizard Progress Stack (Only rendered if activePuzzle exists) */}
+                    {!isGeneratingPuzzle && activePuzzle && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, color: '#647298', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Step-by-step guidance</span>
+                          <button
+                            onClick={handleResetSteps}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#F55B6B',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Reset Steps
+                          </button>
+                        </div>
+
+                        {activePuzzle.steps.map((step, idx) => {
+                          const isCompleted = idx < currentStepIndex;
+                          const isActive = idx === currentStepIndex;
+                          const isLocked = idx > currentStepIndex;
+
+                          let stepBorderColor = 'rgba(255,255,255,0.05)';
+                          let stepBg = 'rgba(255,255,255,0.01)';
+                          let numBg = 'rgba(255,255,255,0.06)';
+                          let numColor = '#647298';
+
+                          if (isCompleted) {
+                            stepBorderColor = 'rgba(34, 197, 160, 0.2)';
+                            stepBg = 'rgba(34, 197, 160, 0.03)';
+                            numBg = '#22C5A0';
+                            numColor = '#000';
+                          } else if (isActive) {
+                            if (validationError) {
+                              stepBorderColor = 'rgba(245, 91, 107, 0.3)';
+                              stepBg = 'rgba(245, 91, 107, 0.04)';
+                              numBg = '#F55B6B';
+                              numColor = '#fff';
+                            } else if (stepPassed) {
+                              stepBorderColor = 'rgba(34, 197, 160, 0.4)';
+                              stepBg = 'rgba(34, 197, 160, 0.05)';
+                              numBg = '#22C5A0';
+                              numColor = '#000';
+                            } else {
+                              stepBorderColor = 'rgba(91, 140, 248, 0.3)';
+                              stepBg = 'rgba(91, 140, 248, 0.04)';
+                              numBg = '#5B8CF8';
+                              numColor = '#000';
+                            }
+                          }
+
+                          return (
+                            <div
+                              key={step.id}
+                              style={{
+                                padding: 12,
+                                background: stepBg,
+                                border: `1px solid ${stepBorderColor}`,
+                                borderRadius: 8,
+                                opacity: isLocked ? 0.4 : 1,
+                                display: 'flex',
+                                gap: 12,
+                                transition: 'all 0.2s',
+                                position: 'relative'
+                              }}
+                            >
+                              {/* Step Index Circle */}
+                              <div style={{
+                                width: 22,
+                                height: 22,
+                                borderRadius: '50%',
+                                background: numBg,
+                                color: numColor,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyCenter: 'center',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                flexShrink: 0,
+                                transition: 'all 0.2s',
+                                display: 'flex',
+                                justifyContent: 'center'
+                              }}>
+                                {isCompleted ? <Check size={11} strokeWidth={3} style={{ alignSelf: 'center' }} /> : idx + 1}
                               </div>
-                              <span style={{ fontSize: 11, color: '#8892B0', lineHeight: 1.3 }}>
-                                You have successfully completed all the steps for this puzzle! Click **Visualize Code** to see it run step-by-step.
-                              </span>
+
+                              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{
+                                    fontSize: 12.5,
+                                    fontWeight: 700,
+                                    color: isCompleted ? '#22C5A0' : isActive ? (validationError ? '#F55B6B' : '#F8FAFC') : '#647298'
+                                  }}>
+                                    {step.shortTitle}
+                                  </span>
+                                  {isActive && (
+                                    <span style={{
+                                      fontSize: 9.5,
+                                      fontWeight: 800,
+                                      textTransform: 'uppercase',
+                                      color: validationError ? '#F55B6B' : stepPassed ? '#22C5A0' : '#5B8CF8'
+                                    }}>
+                                      {validationError ? 'Invalid' : stepPassed ? 'Passed' : 'Active'}
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                <p style={{
+                                  fontSize: 12,
+                                  color: isLocked ? '#3A4560' : isCompleted ? '#8892B0' : '#DDE3F2',
+                                  margin: 0,
+                                  lineHeight: 1.4
+                                }}>
+                                  {step.description}
+                                </p>
+
+                                {/* Render step error message explicitly */}
+                                {isActive && validationError && (
+                                  <div style={{
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: 6,
+                                    padding: '6px 10px',
+                                    background: 'rgba(245, 91, 107, 0.05)',
+                                    border: '1px solid rgba(245, 91, 107, 0.15)',
+                                    borderRadius: 6,
+                                    marginTop: 4
+                                  }}>
+                                    <AlertCircle size={12} color="#F55B6B" style={{ marginTop: 2, flexShrink: 0 }} />
+                                    <span style={{ fontSize: 11, color: '#F55B6B', lineHeight: 1.3 }}>
+                                      Line {validationError.line}: {validationError.message}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Render success buttons to advance */}
+                                {isActive && stepPassed && (
+                                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                    <button
+                                      onClick={handleNextStep}
+                                      style={{
+                                        background: '#22C5A0',
+                                        color: '#000',
+                                        border: 'none',
+                                        padding: '4px 10px',
+                                        borderRadius: 4,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 3
+                                      }}
+                                    >
+                                      Next Step
+                                      <ChevronRight size={11} />
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Render final congratulations card */}
+                                {isActive && idx === activePuzzle.steps.length - 1 && stepPassed && (
+                                  <div style={{
+                                    padding: 8,
+                                    background: 'rgba(34, 197, 160, 0.08)',
+                                    border: '1px solid #22C5A0',
+                                    borderRadius: 6,
+                                    marginTop: 4,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 4
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#22C5A0', fontSize: 11.5, fontWeight: 800 }}>
+                                      <Sparkles size={12} fill="currentColor" />
+                                      CONGRATULATIONS!
+                                    </div>
+                                    <span style={{ fontSize: 11, color: '#8892B0', lineHeight: 1.3 }}>
+                                      You have successfully completed all the steps for this puzzle! Click **Visualize Code** to see it run step-by-step.
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: Variables Visualizer */}
-            {activeRightTab === 'visualizer' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
-                
-                {/* Visualizer scrubbing panel */}
-                {traceData && (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10,
-                    padding: 12,
-                    background: '#0C0F1C',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: 10
-                  }}>
-                    {/* Scrubbing play bar */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', gap: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button
-                          onClick={() => setIsPlaying(!isPlaying)}
-                          style={{
-                            background: '#F5A95B',
-                            color: '#000',
-                            border: 'none',
-                            padding: '4px 8px',
-                            borderRadius: 4,
-                            fontSize: 10.5,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 3
-                          }}
-                        >
-                          {isPlaying ? <Pause size={9} fill="#000" /> : <Play size={9} fill="#000" />}
-                          {isPlaying ? 'Pause' : 'Play'}
-                        </button>
-                        
-                        <button
-                          onClick={() => {
-                            setPlaySpeed(prev => {
-                              if (prev === 1500) return 1000;
-                              if (prev === 1000) return 500;
-                              return 1500;
-                            });
-                          }}
-                          style={{
-                            background: 'rgba(255,255,255,0.04)',
-                            border: '1px solid rgba(255,255,255,0.08)',
-                            color: '#8892B0',
-                            padding: '4px 6px',
-                            borderRadius: 4,
-                            fontSize: 9.5,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            fontFamily: 'monospace'
-                          }}
-                        >
-                          {playSpeed === 1500 ? '1.0x' : playSpeed === 1000 ? '1.5x' : '2.0x'}
-                        </button>
-                        
-                        <div style={{ display: 'flex', gap: 3 }}>
-                          <button
-                            disabled={currentStep === 0}
-                            onClick={() => { setIsPlaying(false); setCurrentStep(prev => prev - 1); }}
-                            style={{
-                              background: 'rgba(255,255,255,0.04)',
-                              border: 'none',
-                              color: currentStep === 0 ? '#4A5568' : '#F8FAFC',
-                              padding: 4,
-                              borderRadius: 4,
-                              cursor: currentStep === 0 ? 'not-allowed' : 'pointer'
-                            }}
-                          >
-                            <ChevronLeft size={11} />
-                          </button>
-                          <button
-                            disabled={currentStep === traceData.length - 1}
-                            onClick={() => { setIsPlaying(false); setCurrentStep(prev => prev + 1); }}
-                            style={{
-                              background: 'rgba(255,255,255,0.04)',
-                              border: 'none',
-                              color: currentStep === traceData.length - 1 ? '#4A5568' : '#F8FAFC',
-                              padding: 4,
-                              borderRadius: 4,
-                              cursor: currentStep === traceData.length - 1 ? 'not-allowed' : 'pointer'
-                            }}
-                          >
-                            <ChevronRight size={11} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <span style={{ fontSize: 10.5, color: '#8892B0', fontWeight: 600, fontFamily: 'monospace', marginLeft: 'auto' }}>
-                        Step {currentStep + 1} of {traceData.length}
-                      </span>
-                    </div>
-
-                    {/* Scrubbing slider range */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 9.5, color: '#647298', fontFamily: 'monospace' }}>01</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={traceData.length - 1}
-                        value={currentStep}
-                        onChange={(e) => {
-                          setIsPlaying(false);
-                          setCurrentStep(parseInt(e.target.value));
-                        }}
-                        style={{
-                          flex: 1,
-                          height: 3,
-                          background: 'rgba(255,255,255,0.1)',
-                          borderRadius: 2,
-                          outline: 'none',
-                          cursor: 'pointer',
-                          accentColor: '#F5A95B'
-                        }}
-                      />
-                      <span style={{ fontSize: 9.5, color: '#647298', fontFamily: 'monospace' }}>
-                        {String(traceData.length).padStart(2, '0')}
-                      </span>
-                    </div>
+                    )}
                   </div>
                 )}
 
-                {/* Memory and Array visualization output */}
-                {renderVisualizerVariables()}
+                {/* TAB 2: Variables Visualizer */}
+                {activeRightTab === 'visualizer' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+                    
+                    {/* Visualizer scrubbing panel */}
+                    {traceData && (
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
+                        padding: 12,
+                        background: '#0C0F1C',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: 10
+                      }}>
+                        {/* Scrubbing play bar */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              onClick={() => setIsPlaying(!isPlaying)}
+                              style={{
+                                background: '#F5A95B',
+                                color: '#000',
+                                border: 'none',
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                fontSize: 10.5,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 3
+                              }}
+                            >
+                              {isPlaying ? <Pause size={9} fill="#000" /> : <Play size={9} fill="#000" />}
+                              {isPlaying ? 'Pause' : 'Play'}
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setPlaySpeed(prev => {
+                                  if (prev === 1500) return 1000;
+                                  if (prev === 1000) return 500;
+                                  return 1500;
+                                });
+                              }}
+                              style={{
+                                background: 'rgba(255,255,255,0.04)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                color: '#8892B0',
+                                padding: '4px 6px',
+                                borderRadius: 4,
+                                fontSize: 9.5,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                fontFamily: 'monospace'
+                              }}
+                            >
+                              {playSpeed === 1500 ? '1.0x' : playSpeed === 1000 ? '1.5x' : '2.0x'}
+                            </button>
+                            
+                            <div style={{ display: 'flex', gap: 3 }}>
+                              <button
+                                disabled={currentStep === 0}
+                                onClick={() => { setIsPlaying(false); setCurrentStep(prev => prev - 1); }}
+                                style={{
+                                  background: 'rgba(255,255,255,0.04)',
+                                  border: 'none',
+                                  color: currentStep === 0 ? '#4A5568' : '#F8FAFC',
+                                  padding: 4,
+                                  borderRadius: 4,
+                                  cursor: currentStep === 0 ? 'not-allowed' : 'pointer'
+                                }}
+                              >
+                                <ChevronLeft size={11} />
+                              </button>
+                              <button
+                                disabled={currentStep === traceData.length - 1}
+                                onClick={() => { setIsPlaying(false); setCurrentStep(prev => prev + 1); }}
+                                style={{
+                                  background: 'rgba(255,255,255,0.04)',
+                                  border: 'none',
+                                  color: currentStep === traceData.length - 1 ? '#4A5568' : '#F8FAFC',
+                                  padding: 4,
+                                  borderRadius: 4,
+                                  cursor: currentStep === traceData.length - 1 ? 'not-allowed' : 'pointer'
+                                }}
+                              >
+                                <ChevronRight size={11} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <span style={{ fontSize: 10.5, color: '#8892B0', fontWeight: 600, fontFamily: 'monospace', marginLeft: 'auto' }}>
+                            Step {currentStep + 1} of {traceData.length}
+                          </span>
+                        </div>
+
+                        {/* Scrubbing slider range */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 9.5, color: '#647298', fontFamily: 'monospace' }}>01</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={traceData.length - 1}
+                            value={currentStep}
+                            onChange={(e) => {
+                              setIsPlaying(false);
+                              setCurrentStep(parseInt(e.target.value));
+                            }}
+                            style={{
+                              flex: 1,
+                              height: 3,
+                              background: 'rgba(255,255,255,0.1)',
+                              borderRadius: 2,
+                              outline: 'none',
+                              cursor: 'pointer',
+                              accentColor: '#F5A95B'
+                            }}
+                          />
+                          <span style={{ fontSize: 9.5, color: '#647298', fontFamily: 'monospace' }}>
+                            {String(traceData.length).padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Memory and Array visualization output */}
+                    {renderVisualizerVariables()}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
       </div>
